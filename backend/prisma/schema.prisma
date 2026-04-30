@@ -1,0 +1,110 @@
+// schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql" // Для локальной разработки можно заменить на "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Связи с onDelete: Cascade/SetNull для безопасного удаления аккаунта
+  chats          ChatMember[]    @relation("UserChats")
+  sentMessages   Message[]       @relation("UserSentMessages")
+  readReceipts   MessageRead[]
+  uploadedFiles  Attachment[]
+  pinnedMessages PinnedMessage[]
+}
+
+model Chat {
+  id        String   @id @default(cuid())
+  isDirect  Boolean  @default(false)
+  title     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members  ChatMember[]
+  messages Message[]
+  pins     PinnedMessage[]
+}
+
+model ChatMember {
+  userId     String
+  chatId     String
+  role       String   @default("member") // owner, member, admin
+  lastReadAt DateTime?
+  createdAt  DateTime @default(now())
+
+  user User @relation("UserChats", fields: [userId], references: [id], onDelete: Cascade)
+  chat Chat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
+  @@id([userId, chatId]) // Генерирует составной ключ: userId_chatId
+}
+
+model Message {
+  id               String   @id @default(cuid())
+  chatId           String
+  senderId         String
+  body             String?  @db.Text
+  createdAt        DateTime @default(now())
+  deletedAt        DateTime?
+  reactions        Json?    @default("{}")
+  replyToMessageId String?
+
+  chat    Chat    @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  sender  User    @relation("UserSentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  replyTo Message? @relation("MessageReplies", fields: [replyToMessageId], references: [id], onDelete: SetNull)
+  replies Message[] @relation("MessageReplies")
+  reads   MessageRead[]
+  attachments Attachment[]
+  pin     PinnedMessage?
+
+  @@index([chatId, createdAt])
+}
+
+model MessageRead {
+  messageId String
+  userId    String
+  readAt    DateTime @default(now())
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([messageId, userId]) // Генерирует составной ключ: messageId_userId
+}
+
+model Attachment {
+  id           String   @id @default(cuid())
+  messageId    String
+  uploaderId   String?  // Сделано опциональным для безопасного удаления загрузчика
+  originalName String
+  mimeType     String
+  sizeBytes    Int
+  storagePath  String
+  url          String
+  createdAt    DateTime @default(now())
+
+  message  Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  uploader User?   @relation(fields: [uploaderId], references: [id], onDelete: SetNull)
+}
+
+model PinnedMessage {
+  chatId     String
+  messageId  String   @unique  // ← Добавлено для соответствия 1:1 relation
+  pinnedById String?
+  createdAt  DateTime @default(now())
+
+  chat    Chat    @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  pinnedBy User?  @relation(fields: [pinnedById], references: [id], onDelete: SetNull)
+
+  @@id([chatId, messageId])
+}
