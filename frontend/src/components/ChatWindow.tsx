@@ -405,7 +405,7 @@ export function ChatWindow() {
       {/* Messages Area */}
       <div 
         ref={messagesContainerRef}
-        style={{ ...s.messagesArea, overflowY: 'auto' }}
+        style={{ ...s.messagesArea, overflowY: 'auto', height: 'calc(100vh - 200px)' }}
         onScroll={handleScroll}
       >
         {isLoading && messages.length > 0 && (
