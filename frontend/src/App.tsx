@@ -9,6 +9,8 @@ import { initSocket, disconnectSocket } from './lib/socket';
 import { authFetch } from './lib/api';
 import { requestPushPermission, subscribeToPush } from './lib/push';
 
+import { Chat, Message } from '../types';
+
 export function App() {
   const { me, token, theme, ui, setUi, setUsers, setChats, setNotifications } = useAppStore();
   const p = themeTokens[theme];
@@ -23,7 +25,7 @@ export function App() {
       authFetch('/notifications').then(r => r.json())
     ]).then(([usersData, chatsData, notificationsData]) => {
       setUsers(usersData);
-      setChats(chatsData.map((c: any) => ({ ...c, pinned: false, draft: '' })));
+      setChats(chatsData.map((c: Chat) => ({ ...c, pinned: false, draft: '' })));
       setNotifications(notificationsData);
       
       // 🔔 Инициализация Push-уведомлений после загрузки данных
