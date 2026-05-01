@@ -37,3 +37,6 @@ uploads/
 !docker-compose.yml
 !Dockerfile
 .docker/
+command.txt
+push.ps1
+backend/scripts/generate-vapid-keys.js

@@ -7,6 +7,7 @@ import { ChatWindow } from './components/ChatWindow';
 import { SettingsModal } from './components/SettingsModal';
 import { initSocket, disconnectSocket } from './lib/socket';
 import { authFetch } from './lib/api';
+import { requestPushPermission, subscribeToPush } from './lib/push';
 
 export function App() {
   // ✅ FIX: Добавлено 'ui' в деструктуризацию
@@ -34,6 +35,29 @@ export function App() {
     document.body.style.background = p.bg;
     document.body.style.color = p.text;
   }, [p]);
+
+React.useEffect(() => {
+  if (!token || !me?.id) return;
+  
+  // Инициализация сокета и загрузка данных (существующий код)
+  initSocket();
+  Promise.all([/* ... */]).then(/* ... */);
+
+  // 🔔 Инициализация Push-уведомлений
+  const initPush = async () => {
+    const hasPermission = await requestPushPermission();
+    if (hasPermission && import.meta.env.VITE_VAPID_PUBLIC_KEY) {
+      try {
+        await subscribeToPush(import.meta.env.VITE_VAPID_PUBLIC_KEY);
+      } catch (e) {
+        console.error('Push subscribe error:', e);
+      }
+    }
+  };
+  initPush();
+  
+  return () => disconnectSocket();
+}, [token, me?.id]);
 
   React.useEffect(() => {
     // ✅ FIX: Используем реактивную переменную ui.toast

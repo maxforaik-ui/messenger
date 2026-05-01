@@ -1,43 +1,134 @@
-import data from '@emoji-mart/data';
-import Picker from '@emoji-mart/react';
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { useAppStore, Message } from '../store/useAppStore';
 import { themeTokens, createStyles } from '../styles/theme';
 import { authFetch } from '../lib/api';
+import data from '@emoji-mart/data';
+import Picker from '@emoji-mart/react';
 
+// Простой встроенный список эмодзи (как фоллбэк)
+const EMOJI_LIST = ['😀', '😂', '🥰', '😎', '🤔', '👍', '🔥', '❤️', '🎉', '👀', '🚀', '✅', '✨', '🙌', '💯'];
 
-// Простой набор эмодзи для вставки
-const EMOJI_LIST = ['😀', '😂', '🥰', '😎', '🤔', '👍', '🔥', '❤️', '🎉', '👀', '🚀', '✅'];
+// Компонент контекстного меню
+function MessageContextMenu({ 
+  x, y, message, isMine, onClose, onReply, onEdit, onDelete, onReaction 
+}: { 
+  x: number; y: number; message: Message; isMine: boolean; 
+  onClose: () => void; onReply: () => void; onEdit: () => void; onDelete: () => void; onReaction: (emoji: string) => void;
+}) {
+  const { theme } = useAppStore();
+  const p = themeTokens[theme];
+  
+  // Закрытие по клику вне меню
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('.context-menu')) onClose();
+    };
+    const handleEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('mousedown', handleClick);
+    document.addEventListener('keydown', handleEsc);
+    return () => {
+      document.removeEventListener('mousedown', handleClick);
+      document.removeEventListener('keydown', handleEsc);
+    };
+  }, [onClose]);
+
+  return (
+    <div 
+      className="context-menu"
+      style={{
+        position: 'fixed', left: x, top: y, zIndex: 1000,
+        background: p.surface, border: `1px solid ${p.border}`,
+        borderRadius: 12, boxShadow: p.shadow, minWidth: 180,
+        overflow: 'hidden'
+      }}
+    >
+      {/* Быстрые реакции */}
+      <div style={{ padding: '8px 12px', borderBottom: `1px solid ${p.border}`, display: 'flex', gap: 4 }}>
+        {['👍', '❤️', '😂', '😮', '😢'].map(emoji => (
+          <button 
+            key={emoji} 
+            onClick={() => { onReaction(emoji); onClose(); }}
+            style={{ 
+              border: 'none', background: 'transparent', fontSize: 18, 
+              cursor: 'pointer', borderRadius: 4, padding: '2px 4px',
+              transition: 'background 0.1s'
+            }}
+            onMouseOver={e => e.currentTarget.style.background = p.sidebarAlt}
+            onMouseOut={e => e.currentTarget.style.background = 'transparent'}
+          >
+            {emoji}
+          </button>
+        ))}
+      </div>
+      
+      {/* Основные действия */}
+      <div style={{ padding: '4px 0' }}>
+        <button 
+          onClick={() => { onReply(); onClose(); }}
+          style={{ 
+            width: '100%', padding: '10px 16px', textAlign: 'left', 
+            border: 'none', background: 'transparent', color: p.text,
+            cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', gap: 8
+          }}
+          onMouseOver={e => e.currentTarget.style.background = p.sidebarAlt}
+          onMouseOut={e => e.currentTarget.style.background = 'transparent'}
+        >
+          ↩️ Ответить
+        </button>
+        {isMine && !message.deletedAt && (
+          <>
+            <button 
+              onClick={() => { onEdit(); onClose(); }}
+              style={{ 
+                width: '100%', padding: '10px 16px', textAlign: 'left', 
+                border: 'none', background: 'transparent', color: p.text,
+                cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', gap: 8
+              }}
+              onMouseOver={e => e.currentTarget.style.background = p.sidebarAlt}
+              onMouseOut={e => e.currentTarget.style.background = 'transparent'}
+            >
+              ✏️ Редактировать
+            </button>
+            <button 
+              onClick={() => { onDelete(); onClose(); }}
+              style={{ 
+                width: '100%', padding: '10px 16px', textAlign: 'left', 
+                border: 'none', background: 'transparent', color: '#dc2626',
+                cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', gap: 8
+              }}
+              onMouseOver={e => e.currentTarget.style.background = '#fef2f2'}
+              onMouseOut={e => e.currentTarget.style.background = 'transparent'}
+            >
+              🗑️ Удалить
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function MessageBubble({ 
-  msg, 
-  isMine, 
-  onReply, 
-  onEdit, 
-  onDelete, 
-  onReaction,
-  readStatus 
+  msg, isMine, onReply, onEdit, onDelete, onReaction, readStatus, openContextMenu 
 }: { 
-  msg: Message; 
-  isMine: boolean; 
-  onReply: () => void; 
-  onEdit: () => void; 
-  onDelete: () => void; 
-  onReaction: (emoji: string) => void;
-  readStatus: 'sent' | 'delivered' | 'read';
+  msg: Message; isMine: boolean; onReply: () => void; onEdit: () => void; 
+  onDelete: () => void; onReaction: (emoji: string) => void;
+  readStatus: 'sent' | 'delivered' | 'read'; openContextMenu: (e: React.MouseEvent, msg: Message) => void;
 }) {
   const { theme } = useAppStore();
   const p = themeTokens[theme];
   const s = createStyles(p);
 
   return (
-    <div style={{ 
-      display: 'flex', 
-      justifyContent: isMine ? 'flex-end' : 'flex-start', 
-      marginBottom: 8,
-      position: 'relative'
-    }} id={`msg-${msg.id}`}>
-      
+    <div 
+      style={{ 
+        display: 'flex', justifyContent: isMine ? 'flex-end' : 'flex-start', 
+        marginBottom: 8, position: 'relative', cursor: 'context-menu' 
+      }} 
+      id={`msg-${msg.id}`}
+      onContextMenu={(e) => { e.preventDefault(); openContextMenu(e, msg); }}
+    >
       <div style={{ ...s.bubble, background: isMine ? p.outgoing : p.incoming }}>
         
         {/* Блок ответа */}
@@ -51,8 +142,7 @@ function MessageBubble({
         {/* Текст сообщения */}
         {!!msg.body && (
           <div style={{ 
-            ...s.bubbleText, 
-            color: msg.deletedAt ? p.muted : p.text,
+            ...s.bubbleText, color: msg.deletedAt ? p.muted : p.text,
             fontStyle: msg.deletedAt ? 'italic' : 'normal' 
           }}>
             {msg.deletedAt ? 'Сообщение удалено' : msg.body}
@@ -74,17 +164,19 @@ function MessageBubble({
         {Object.keys(msg.reactions || {}).length > 0 && (
           <div style={{ display: 'flex', gap: 4, marginTop: 4, flexWrap: 'wrap' }}>
             {Object.entries(msg.reactions).map(([emoji, count]) => (
-              <span key={emoji} style={{ ...s.reactionChip, cursor: 'pointer', border: '1px solid ' + p.border }}>
+              <span 
+                key={emoji} 
+                style={{ ...s.reactionChip, cursor: 'pointer', border: '1px solid ' + p.border }}
+                onClick={() => onReaction(emoji)}
+              >
                 {emoji} <sub>{count}</sub>
               </span>
             ))}
           </div>
         )}
 
-        {/* Мета-информация и действия */}
+        {/* Мета-информация и кнопка меню для мобильных */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>
-          
-          {/* Время и статус */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: p.muted }}>
             {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             {isMine && !msg.deletedAt && (
@@ -93,23 +185,21 @@ function MessageBubble({
               </span>
             )}
           </div>
-
-          {/* Кнопки действий (появляются при наведении) */}
-          {!msg.deletedAt && (
-            <div style={{ display: 'none', position: 'absolute', top: -10, right: isMine ? 0 : 'auto', left: isMine ? 'auto' : 0, background: p.surface, borderRadius: 8, boxShadow: p.shadow, padding: 4, gap: 4, zIndex: 2 }} className="msg-actions">
-              <button onClick={onReply} style={{ ...s.iconBtn, width: 28, height: 28, fontSize: 12 }} title="Ответить">↩️</button>
-              {isMine && <button onClick={onEdit} style={{ ...s.iconBtn, width: 28, height: 28, fontSize: 12 }} title="Редактировать">✏️</button>}
-              {isMine && <button onClick={onDelete} style={{ ...s.iconBtn, width: 28, height: 28, fontSize: 12 }} title="Удалить">🗑️</button>}
-              <button onClick={() => onReaction('👍')} style={{ ...s.iconBtn, width: 28, height: 28, fontSize: 12 }}>👍</button>
-            </div>
-          )}
+          
+          {/* Кнопка "⋮" для мобильных / тач-устройств */}
+          <button 
+            onClick={(e) => { e.stopPropagation(); openContextMenu(e as any, msg); }}
+            style={{ 
+              background: 'transparent', border: 'none', fontSize: 18, 
+              cursor: 'pointer', color: p.muted, padding: '2px 6px',
+              borderRadius: 4
+            }}
+            title="Действия"
+          >
+            ⋮
+          </button>
         </div>
       </div>
-
-      {/* CSS для показа действий при наведении */}
-      <style>{`
-        .bubble-container:hover .msg-actions { display: flex !important; }
-      `}</style>
     </div>
   );
 }
@@ -123,6 +213,9 @@ export function ChatWindow() {
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  
+  // Состояние контекстного меню
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; message: Message } | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chat = chats.find(c => c.id === activeChatId);
@@ -144,6 +237,15 @@ export function ChatWindow() {
       .then(data => setMessages(Array.isArray(data) ? data : (data.messages || [])))
       .catch(console.error);
   }, [activeChatId, setMessages]);
+
+  // Обработчик открытия контекстного меню
+  const handleContextMenu = (e: React.MouseEvent, message: Message) => {
+    e.preventDefault();
+    // Позиционируем меню так, чтобы оно не уходило за край экрана
+    const x = Math.min(e.clientX, window.innerWidth - 200);
+    const y = Math.min(e.clientY, window.innerHeight - 200);
+    setContextMenu({ x, y, message });
+  };
 
   const handleSend = async () => {
     if ((!draft.trim() && pendingFiles.length === 0) && !editingMessage) return;
@@ -176,19 +278,15 @@ export function ChatWindow() {
       if (!res.ok) throw new Error('Ошибка отправки');
       const msg = await res.json();
       
-      // Сброс состояния
       setDraft('');
       setReplyTo(null);
 
-      // 3. Загрузка файлов (если есть)
+      // 3. Загрузка файлов
       if (pendingFiles.length > 0) {
         for (const file of pendingFiles) {
           const formData = new FormData();
           formData.append('file', file);
-          await authFetch(`/messages/${msg.id}/attachments`, {
-            method: 'POST',
-            body: formData
-          });
+          await authFetch(`/messages/${msg.id}/attachments`, { method: 'POST', body: formData });
         }
         setPendingFiles([]);
       }
@@ -226,7 +324,6 @@ export function ChatWindow() {
   // Статусы сообщений
   const getReadStatus = (msg: Message) => {
     if (!msg.reads || msg.reads.length === 0) return 'sent';
-    // Если прочитали другие участники чата
     const othersRead = msg.reads.filter(r => r.userId !== me?.id).length;
     return othersRead > 0 ? 'read' : 'delivered';
   };
@@ -253,7 +350,7 @@ export function ChatWindow() {
       </div>
 
       {/* Messages Area */}
-      <div style={s.messagesArea} className="bubble-container">
+      <div style={s.messagesArea}>
         {messages.length === 0 && <div style={s.emptyCanvas}>Нет сообщений. Напишите первым!</div>}
         {messages.map(m => (
           <MessageBubble
@@ -265,6 +362,7 @@ export function ChatWindow() {
             onDelete={() => handleDelete(m.id)}
             onReaction={(emoji) => handleReaction(m.id, emoji)}
             readStatus={getReadStatus(m)}
+            openContextMenu={handleContextMenu}
           />
         ))}
         <div ref={messagesEndRef} />
@@ -273,7 +371,6 @@ export function ChatWindow() {
       {/* Composer */}
       <div style={s.composerWrap}>
         
-        {/* Баннер "Отвечаем на..." */}
         {replyTo && (
           <div style={{ padding: '8px 14px', background: p.accentSoft, display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: `1px solid ${p.border}` }}>
             <div style={{ fontSize: 13 }}>
@@ -283,7 +380,6 @@ export function ChatWindow() {
           </div>
         )}
 
-        {/* Баннер "Редактирование..." */}
         {editingMessage && (
           <div style={{ padding: '8px 14px', background: p.sidebarAlt, display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: `1px solid ${p.border}` }}>
             <div style={{ fontSize: 13 }}>
@@ -293,7 +389,6 @@ export function ChatWindow() {
           </div>
         )}
 
-        {/* Превью файлов */}
         {pendingFiles.length > 0 && (
           <div style={{ padding: '8px 14px', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {pendingFiles.map((f, i) => (
@@ -305,17 +400,9 @@ export function ChatWindow() {
           </div>
         )}
 
-        {/* Панель эмодзи */}
+        {/* Emoji Picker (emoji-mart) */}
         {showEmojiPicker && (
-          <div style={{ 
-            position: 'absolute', 
-            bottom: 120, 
-            left: 20, 
-            zIndex: 100,
-            boxShadow: s.shadow,
-            borderRadius: 12,
-            overflow: 'hidden'
-          }}>
+          <div style={{ position: 'absolute', bottom: 120, left: 20, zIndex: 100, boxShadow: p.shadow, borderRadius: 12, overflow: 'hidden' }}>
             <Picker 
               data={data}
               onEmojiSelect={(emoji: any) => {
@@ -347,6 +434,21 @@ export function ChatWindow() {
           <button onClick={handleSend} style={s.sendBtn}>{editingMessage ? '💾' : '🚀'}</button>
         </div>
       </div>
+
+      {/* Контекстное меню (рендерится поверх всего) */}
+      {contextMenu && (
+        <MessageContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          message={contextMenu.message}
+          isMine={contextMenu.message.sender.id === me?.id}
+          onClose={() => setContextMenu(null)}
+          onReply={() => setReplyTo(contextMenu.message)}
+          onEdit={() => { setDraft(contextMenu.message.body || ''); setEditingMessage(contextMenu.message); setReplyTo(null); }}
+          onDelete={() => handleDelete(contextMenu.message.id)}
+          onReaction={(emoji) => handleReaction(contextMenu.message.id, emoji)}
+        />
+      )}
     </main>
   );
 }

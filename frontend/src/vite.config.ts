@@ -1,5 +1,4 @@
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
+// frontend/vite.config.ts
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
@@ -7,11 +6,11 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
+      includeAssets: ['favicon.ico', 'icon-192.png', 'icon-512.png'],
       manifest: {
-        name: 'Messenger 5.0',
+        name: 'Messenger 5.1',
         short_name: 'Messenger',
-        description: 'Real-time chat application',
+        description: 'Real-time chat with push notifications',
         theme_color: '#3390ec',
         background_color: '#0f1720',
         display: 'standalone',
@@ -25,13 +24,16 @@ export default defineConfig({
         runtimeCaching: [{
           urlPattern: /^https:\/\/.*\.(png|jpg|jpeg|svg|gif)$/,
           handler: 'CacheFirst',
-          options: {
-            cacheName: 'images-cache',
-            expiration: { maxEntries: 50, maxAgeSeconds: 30 * 24 * 60 * 60 }
-          }
+          options: { cacheName: 'images-cache', expiration: { maxEntries: 50, maxAgeSeconds: 2592000 } }
         }]
-      }
+      },
+      // 🎯 Обработчик push-событий
+      devOptions: { enabled: true },
+      injectRegister: 'auto',
+      strategies: 'generateSW',
+      // Кастомный sw.ts будет подключён ниже
+      srcDir: 'src',
+      filename: 'sw.ts',
     })
-  ],
-  server: { port: 5173, host: '0.0.0.0' }
+  ]
 });

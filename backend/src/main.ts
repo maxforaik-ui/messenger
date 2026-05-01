@@ -20,6 +20,7 @@ import rateLimit from 'express-rate-limit';
 import { prisma } from './db.js';
 import { authMiddleware, comparePassword, hashPassword, signToken, type AuthUser } from './auth.js';
 import { connectPresenceRedis, connectStreamsRedis } from './redis.js';
+import { subscribeUser, unsubscribeUser, sendPushNotification } from './push.js';
 
 const app = express();
 app.use(cors({ origin: process.env.CLIENT_ORIGIN, credentials: true }));
@@ -196,6 +197,45 @@ app.post('/chats/group', authMiddleware, async (req: express.Request & { user?: 
   res.json(chat);
 });
 
+// POST /push/subscribe — сохранить подписку
+app.post('/push/subscribe', authMiddleware, async (req, res) => {
+  try {
+    const { subscription, userAgent } = req.body;
+    if (!subscription?.endpoint) return res.status(400).json({ message: 'Invalid subscription' });
+    
+    const sub = await subscribeUser(req.user!.userId, subscription, userAgent);
+    res.json({ success: true, subscription: sub });
+  } catch (error) {
+    console.error('Subscribe error:', error);
+    res.status(500).json({ message: 'Failed to subscribe' });
+  }
+});
+
+// POST /push/unsubscribe — удалить подписку
+app.post('/push/unsubscribe', authMiddleware, async (req, res) => {
+  try {
+    const { endpoint } = req.body;
+    if (!endpoint) return res.status(400).json({ message: 'Endpoint required' });
+    
+    await unsubscribeUser(req.user!.userId, endpoint);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Unsubscribe error:', error);
+    res.status(500).json({ message: 'Failed to unsubscribe' });
+  }
+});
+
+// POST /push/test — тестовая отправка (для разработки)
+app.post('/push/test', authMiddleware, async (req, res) => {
+  try {
+    await sendPushNotification(req.user!.userId, '🔔 Тест', 'Push-уведомления работают!', '/icon-192.png');
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Test push error:', error);
+    res.status(500).json({ message: 'Failed to send test push' });
+  }
+});
+
 app.get('/chats', authMiddleware, async (req: express.Request & { user?: AuthUser }, res) => {
   const userId = req.user!.userId;
   const chats = await prisma.chat.findMany({
@@ -279,10 +319,30 @@ app.post('/messages', authMiddleware, async (req: express.Request & { user?: Aut
       data: { body }, 
       include: { sender: { select: { id: true, name: true, email: true } }, reads: true, attachments: true, replyTo: { include: { sender: { select: { name: true } } } } } 
     });
-    const formatted = formatMessage(updated);
-    io.to(`chat:${chatId}`).emit('message:updated', formatted);
+    const formatted = formatMessage(message);
+    io.to(`chat:${chatId}`).emit('message:new', formatted);
+    io.to(`chat:${chatId}`).emit('typing:update', { chatId, userId: senderId, isTyping: false });
+
+    // 🔔 PUSH-УВЕДОМЛЕНИЯ
+    const chatMembers = await prisma.chatMember.findMany({ where: { chatId }, include: { user: true } });
+    for (const member of chatMembers) {
+      if (member.userId !== senderId) {
+        // Отправляем пуш только тем, кто не в сети (упрощённая логика)
+        const isOnline = (presenceCounts.get(member.userId) || 0) > 0;
+        if (!isOnline) {
+          sendPushNotification(
+            member.userId,
+            `💬 ${message.sender.name}`,
+            formatted.body || '📎 Новое вложение',
+            '/icon-192.png',
+            { chatId, messageId: message.id }
+          ).catch(console.error); // Не блокируем ответ HTTP
+        }
+      }
+    }
+
     if (idempotencyKey) processedMutations.set(`${senderId}:${idempotencyKey}`, formatted);
-    return res.json(formatted);
+    res.json(formatted);
   }
 
   let replyToMessageIdSafe = replyToMessageId;
