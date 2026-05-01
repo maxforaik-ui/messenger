@@ -9,7 +9,7 @@ import { initSocket, disconnectSocket } from './lib/socket';
 import { authFetch } from './lib/api';
 import { requestPushPermission, subscribeToPush } from './lib/push';
 
-import { Chat, Message } from '../types';
+import { Chat, Message } from './types';
 
 export function App() {
   const { me, token, theme, ui, setUi, setUsers, setChats, setNotifications } = useAppStore();

@@ -2,41 +2,46 @@
 # Dependencies
 node_modules/
 
+# Build outputs
+dist/
+build/
+*.js.map
+*.tsbuildinfo
+
 # Environment
 .env
 .env.local
-.env.*
+*.env.*
 
-# Logs
+# Logs and temporary files
 *.log
+*.tmp
 
-# IDE
+# Editor/IDE
 .vscode/
 .idea/
+*.swp
+*.swo
 
-# Python
+# Python (if present)
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 .Python
-venv/
-.venv/
-.env
+*.so
+.coverage
+coverage/
+htmlcov/
+.pytest_cache/
+.mypy_cache/
 
-# Build outputs
-dist/
-build/
-target/
-*.min.js
-*.min.css
-
-# Prisma
-prisma/migrations/
-
-# Temporary files
-*.tmp
-*.temp
+# OS generated files
 .DS_Store
 Thumbs.db
+
+# Package manager
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
 ```
