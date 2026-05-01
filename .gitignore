@@ -1,42 +1,46 @@
-# Зависимости
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-package-lock.json
-
-# Сборка и артефакты
-dist/
-build/
-.vite/
-*.log
-
-# Prisma
-.prisma/
-prisma/migrations/**/migration_lock.toml
-
-# ENV и секреты
+```
+# Environment variables
 .env
 .env.local
-.env*.local
+.env.*
 
-# OS и редакторы
-.DS_Store
-Thumbs.db
-*.swp
-*.swo
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+*.js
+*.ts
+*.tsx
+
+# Logs and temporary files
+*.log
+*.tmp
+
+# Editors
 .vscode/
 .idea/
 
-# Загрузки
-uploads/
-*.tmp
-*.temp
+# Python (if applicable)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
 
-# Docker (опционально)
-!docker-compose.yml
-!Dockerfile
-.docker/
-command.txt
-push.ps1
-backend/scripts/generate-vapid-keys.js
+# Coverage reports
+coverage/
+htmlcov/
+.coverage
+
+# Distribution / packaging
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+.junit.xml
+```

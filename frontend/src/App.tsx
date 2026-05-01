@@ -10,7 +10,6 @@ import { authFetch } from './lib/api';
 import { requestPushPermission, subscribeToPush } from './lib/push';
 
 export function App() {
-  // ✅ FIX: Добавлено 'ui' в деструктуризацию
   const { me, token, theme, ui, setUi, setUsers, setChats, setNotifications } = useAppStore();
   const p = themeTokens[theme];
   const s = React.useMemo(() => createStyles(p), [p]);
@@ -26,6 +25,19 @@ export function App() {
       setUsers(usersData);
       setChats(chatsData.map((c: any) => ({ ...c, pinned: false, draft: '' })));
       setNotifications(notificationsData);
+      
+      // 🔔 Инициализация Push-уведомлений после загрузки данных
+      const initPush = async () => {
+        const hasPermission = await requestPushPermission();
+        if (hasPermission && import.meta.env.VITE_VAPID_PUBLIC_KEY) {
+          try {
+            await subscribeToPush(import.meta.env.VITE_VAPID_PUBLIC_KEY);
+          } catch (e) {
+            console.error('Push subscribe error:', e);
+          }
+        }
+      };
+      initPush();
     }).catch(console.error);
     return () => disconnectSocket();
   }, [token, me?.id, setUsers, setChats, setNotifications]);
@@ -36,31 +48,7 @@ export function App() {
     document.body.style.color = p.text;
   }, [p]);
 
-React.useEffect(() => {
-  if (!token || !me?.id) return;
-  
-  // Инициализация сокета и загрузка данных (существующий код)
-  initSocket();
-  Promise.all([/* ... */]).then(/* ... */);
-
-  // 🔔 Инициализация Push-уведомлений
-  const initPush = async () => {
-    const hasPermission = await requestPushPermission();
-    if (hasPermission && import.meta.env.VITE_VAPID_PUBLIC_KEY) {
-      try {
-        await subscribeToPush(import.meta.env.VITE_VAPID_PUBLIC_KEY);
-      } catch (e) {
-        console.error('Push subscribe error:', e);
-      }
-    }
-  };
-  initPush();
-  
-  return () => disconnectSocket();
-}, [token, me?.id]);
-
   React.useEffect(() => {
-    // ✅ FIX: Используем реактивную переменную ui.toast
     if (ui.toast) {
       const t = setTimeout(() => setUi({ toast: '' }), 3000);
       return () => clearTimeout(t);
@@ -71,7 +59,6 @@ React.useEffect(() => {
 
   return (
     <div style={s.layout}>
-      {/* ✅ FIX: Убраны артефакты & & */}
       {ui.toast && <div style={s.toast}>{ui.toast}</div>}
       <Sidebar />
       <ChatWindow />

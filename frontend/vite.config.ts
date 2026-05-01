@@ -7,11 +7,11 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
+      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg', 'icon-192.png', 'icon-512.png'],
       manifest: {
         name: 'Messenger 5.1',
         short_name: 'Messenger',
-        description: 'Real-time chat with PWA support',
+        description: 'Real-time chat with push notifications',
         theme_color: '#3390ec',
         background_color: '#0f1720',
         display: 'standalone',
@@ -27,7 +27,13 @@ export default defineConfig({
           handler: 'CacheFirst',
           options: { cacheName: 'images-cache', expiration: { maxEntries: 50, maxAgeSeconds: 2592000 } }
         }]
-      }
+      },
+      // 🔔 Настройки для push-уведомлений
+      devOptions: { enabled: true },
+      injectRegister: 'auto',
+      strategies: 'generateSW',
+      srcDir: '',
+      filename: 'sw.ts',
     })
   ],
   server: { port: 5173, host: '0.0.0.0' }
