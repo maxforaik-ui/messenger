@@ -1,20 +1,8 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import type { User, Attachment, ReadReceipt, Message, Chat, ThemeMode, NotificationPayload } from '../types';
 
-export type User = { id: string; name: string; email: string; online?: boolean };
-export type Attachment = { id: string; url: string; originalName: string; mimeType: string; sizeBytes: number };
-export type ReadReceipt = { userId: string; readAt: string };
-export type Message = {
-  id: string; chatId: string; body?: string; createdAt: string;
-  sender: User; reads?: ReadReceipt[]; attachments?: Attachment[];
-  replyTo?: { id: string; body?: string; senderName?: string } | null;
-  reactions?: Record<string, number>;
-};
-export type Chat = {
-  id: string; title?: string | null; isDirect?: boolean; unreadCount?: number;
-  members: { user: User }[]; messages: Message[]; pinned?: boolean; draft?: string;
-};
-export type ThemeMode = 'light' | 'dark';
+export type { User, Attachment, ReadReceipt, Message, Chat, ThemeMode };
 
 interface AppState {
   token: string | null; setToken: (t: string | null) => void;
@@ -28,7 +16,7 @@ interface AppState {
   pendingFiles: File[]; setPendingFiles: (f: File[]) => void;
   isDragging: boolean; setIsDragging: (v: boolean) => void;
   typingUsers: Record<string, boolean>; setTypingUsers: (t: Record<string, boolean> | ((p: Record<string, boolean>) => Record<string, boolean>)) => void;
-  notifications: any[]; setNotifications: (n: any[]) => void;
+  notifications: NotificationPayload[]; setNotifications: (n: NotificationPayload[]) => void;
   theme: ThemeMode; toggleTheme: () => void;
   ui: { showUsers: boolean; showSettings: boolean; showNotifications: boolean; search: string; toast: string };
   setUi: (p: Partial<AppState['ui']>) => void;

@@ -1,46 +1,42 @@
 ```
-# Environment variables
+# Dependencies
+node_modules/
+
+# Environment
 .env
 .env.local
 .env.*
 
-# Dependencies
-node_modules/
-
-# Build outputs
-dist/
-build/
-*.js
-*.ts
-*.tsx
-
-# Logs and temporary files
+# Logs
 *.log
-*.tmp
 
-# Editors
+# IDE
 .vscode/
 .idea/
 
-# Python (if applicable)
+# Python
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
-
-# Coverage reports
-coverage/
-htmlcov/
-.coverage
-
-# Distribution / packaging
 .Python
-env/
 venv/
 .venv/
-pip-log.txt
-pip-delete-this-directory.txt
+.env
 
-# Unit test / coverage reports
-.junit.xml
+# Build outputs
+dist/
+build/
+target/
+*.min.js
+*.min.css
+
+# Prisma
+prisma/migrations/
+
+# Temporary files
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
 ```

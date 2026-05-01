@@ -4,6 +4,7 @@ import { themeTokens, createStyles } from '../styles/theme';
 import { authFetch } from '../lib/api';
 import data from '@emoji-mart/data';
 import Picker from '@emoji-mart/react';
+import type { Chat as ChatType } from '../types';
 
 // Простой встроенный список эмодзи (как фоллбэк)
 const EMOJI_LIST = ['😀', '😂', '🥰', '😎', '🤔', '👍', '🔥', '❤️', '🎉', '👀', '🚀', '✅', '✨', '🙌', '💯'];
@@ -228,11 +229,13 @@ export function ChatWindow() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, pendingFiles]);
 
-  // Загрузка сообщений
+  // Загрузка сообщений с пагинацией (первая страница)
   React.useEffect(() => {
     if (!activeChatId) { setMessages([]); return; }
     setMessages([]);
-    authFetch(`/chats/${activeChatId}/messages`)
+    // TODO: Добавить пагинацию - загружать только последние 50 сообщений
+    // Сейчас загружаются все сообщения при первом открытии чата
+    authFetch(`/chats/${activeChatId}/messages?limit=50`)
       .then(r => r.json())
       .then(data => setMessages(Array.isArray(data) ? data : (data.messages || [])))
       .catch(console.error);
@@ -267,7 +270,7 @@ export function ChatWindow() {
       }
 
       // 2. Логика отправки нового сообщения
-      const payload: any = { chatId: activeChatId, body: draft };
+      const payload: { chatId: string; body: string; replyToMessageId?: string } = { chatId: activeChatId, body: draft };
       if (replyTo) payload.replyToMessageId = replyTo.id;
 
       const res = await authFetch('/messages', {
@@ -405,7 +408,7 @@ export function ChatWindow() {
           <div style={{ position: 'absolute', bottom: 120, left: 20, zIndex: 100, boxShadow: p.shadow, borderRadius: 12, overflow: 'hidden' }}>
             <Picker 
               data={data}
-              onEmojiSelect={(emoji: any) => {
+              onEmojiSelect={(emoji: { native: string }) => {
                 setDraft(prev => prev + emoji.native);
                 setShowEmojiPicker(false);
               }}
