@@ -29,8 +29,7 @@ export function initSocket() {
     useAppStore.setState((s) => ({
       messages: s.messages.map(m => m.id === msg.id ? { ...m, ...msg } : m),
       chats: s.chats.map(c => c.id === msg.chatId ? { 
-        ...c, 
-        messages: c.messages?.[0]?.id === msg.id ? [msg] : c.messages 
+        ...c
       } : c)
     }));
   });
