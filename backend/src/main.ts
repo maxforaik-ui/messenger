@@ -47,6 +47,7 @@ const io = new Server(httpServer, { cors: { origin: process.env.CLIENT_ORIGIN, c
 
 await connectPresenceRedis();
 await connectStreamsRedis();
+
 console.log('Socket.IO Redis adapter disabled (single-node dev mode), streams-ready placeholder enabled');
 
 const typingTimers = new Map<string, NodeJS.Timeout>();
@@ -115,10 +116,9 @@ async function markReadForMessage(userId: string, messageId: string) {
     update: { readAt: now },
     create: { messageId, userId, readAt: now }
   });
-  // FIX: Added 'data:' key
-  await prisma.chatMember.update({ 
-    where: { userId_chatId: { userId, chatId: message.chatId } }, 
-    data: { lastReadAt: now } 
+  await prisma.chatMember.update({
+    where: { userId_chatId: { userId, chatId: message.chatId } },
+    data: { lastReadAt: now }
   });
   io.to(`chat:${message.chatId}`).emit('message:read:updated', { messageId, userId, readAt: read.readAt, chatId: message.chatId });
   return read;
@@ -150,7 +150,7 @@ app.post('/auth/login', async (req, res) => {
 
 app.get('/users', authMiddleware, async (req: express.Request & { user?: AuthUser }, res) => {
   const users = await prisma.user.findMany({
-    where: { id: { not: req.user!.userId } },
+    where: { id: { not: req.user!.userId }, deletedAt: null },
     select: { id: true, email: true, name: true, createdAt: true },
     orderBy: { createdAt: 'desc' }
   });
@@ -165,6 +165,7 @@ app.post('/chats/direct', authMiddleware, async (req: express.Request & { user?:
   const existing = await prisma.chat.findFirst({
     where: {
       isDirect: true,
+      deletedAt: null,
       members: { some: { userId: currentUserId } },
       AND: [{ members: { some: { userId: peerUserId } } }]
     },
@@ -174,7 +175,7 @@ app.post('/chats/direct', authMiddleware, async (req: express.Request & { user?:
     }
   });
   if (existing) return res.json(existing);
-  const chat = await prisma.chat.create({ 
+  const chat = await prisma.chat.create({
     data: { isDirect: true, members: { create: [{ userId: currentUserId }, { userId: peerUserId }] } },
     include: { members: { include: { user: { select: { id: true, name: true, email: true } } } }, messages: true }
   });
@@ -186,7 +187,7 @@ app.post('/chats/group', authMiddleware, async (req: express.Request & { user?: 
   if (!parsed.success) return res.status(400).json(parsed.error.flatten());
   const creatorId = req.user!.userId;
   const uniqueMemberIds = Array.from(new Set([creatorId, ...parsed.data.memberIds]));
-  const chat = await prisma.chat.create({ 
+  const chat = await prisma.chat.create({
     data: {
       title: parsed.data.title,
       isDirect: false,
@@ -197,12 +198,11 @@ app.post('/chats/group', authMiddleware, async (req: express.Request & { user?: 
   res.json(chat);
 });
 
-// POST /push/subscribe — сохранить подписку
+// POST /push/subscribe
 app.post('/push/subscribe', authMiddleware, async (req, res) => {
   try {
     const { subscription, userAgent } = req.body;
     if (!subscription?.endpoint) return res.status(400).json({ message: 'Invalid subscription' });
-    
     const sub = await subscribeUser(req.user!.userId, subscription, userAgent);
     res.json({ success: true, subscription: sub });
   } catch (error) {
@@ -211,12 +211,11 @@ app.post('/push/subscribe', authMiddleware, async (req, res) => {
   }
 });
 
-// POST /push/unsubscribe — удалить подписку
+// POST /push/unsubscribe
 app.post('/push/unsubscribe', authMiddleware, async (req, res) => {
   try {
     const { endpoint } = req.body;
     if (!endpoint) return res.status(400).json({ message: 'Endpoint required' });
-    
     await unsubscribeUser(req.user!.userId, endpoint);
     res.json({ success: true });
   } catch (error) {
@@ -225,7 +224,7 @@ app.post('/push/unsubscribe', authMiddleware, async (req, res) => {
   }
 });
 
-// POST /push/test — тестовая отправка (для разработки)
+// POST /push/test
 app.post('/push/test', authMiddleware, async (req, res) => {
   try {
     await sendPushNotification(req.user!.userId, '🔔 Тест', 'Push-уведомления работают!', '/icon-192.png');
@@ -239,40 +238,39 @@ app.post('/push/test', authMiddleware, async (req, res) => {
 app.get('/chats', authMiddleware, async (req: express.Request & { user?: AuthUser }, res) => {
   const userId = req.user!.userId;
   const chats = await prisma.chat.findMany({
-    where: { members: { some: { userId } } },
+    where: { members: { some: { userId } }, deletedAt: null },
     include: {
       members: { include: { user: { select: { id: true, name: true, email: true } } } },
-      messages: { 
-        orderBy: { createdAt: 'desc' }, 
-        take: 1, 
-        include: { 
-          reads: { select: { userId: true, readAt: true } }, 
-          attachments: true, 
-          replyTo: { include: { sender: { select: { name: true } } } } 
-        } 
+      messages: {
+        where: { deletedAt: null },
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+        include: {
+          reads: { select: { userId: true, readAt: true } },
+          attachments: true,
+          replyTo: { include: { sender: { select: { name: true } } } }
+        }
       },
-      // ✅ FIX: Заменено pinnedMessages на pins (как в schema.prisma)
-      pins: { 
-        include: { message: { include: { sender: { select: { name: true } } } } }, 
-        orderBy: { createdAt: 'desc' }, 
-        take: 1 
+      pins: {
+        include: { message: { include: { sender: { select: { name: true } } } } },
+        orderBy: { createdAt: 'desc' },
+        take: 1
       }
     },
     orderBy: { createdAt: 'desc' }
   });
-
   const withUnread = await Promise.all(chats.map(async (chat) => {
     const membership = await prisma.chatMember.findUnique({ where: { userId_chatId: { userId, chatId: chat.id } } });
     const unreadCount = await prisma.message.count({
-      where: { 
-        chatId: chat.id, 
-        senderId: { not: userId }, 
-        createdAt: membership?.lastReadAt ? { gt: membership.lastReadAt } : undefined 
+      where: {
+        chatId: chat.id,
+        senderId: { not: userId },
+        deletedAt: null,
+        createdAt: membership?.lastReadAt ? { gt: membership.lastReadAt } : undefined
       }
     });
     return { ...chat, unreadCount };
   }));
-
   res.json(withUnread.map((chat) => ({ ...chat, messages: chat.messages.map(formatMessage) })));
 });
 
@@ -280,20 +278,23 @@ app.get('/chats/:chatId/messages', authMiddleware, async (req, res) => {
   const { chatId } = req.params;
   const member = await ensureChatMembership(req.user!.userId, chatId);
   if (!member) return res.status(403).json({ message: 'Forbidden' });
-
   const limit = Math.min(Number(req.query.limit) || 50, 100);
   const before = req.query.before ? new Date(String(req.query.before)) : undefined;
-  const where: any = { chatId };
+  const where: any = { chatId, deletedAt: null }; // ✅ FIX: Добавлен фильтр deletedAt: null
   if (before) where.createdAt = { lt: before };
-
   const messages = await prisma.message.findMany({
-    where, include: { sender: { select: { id: true, name: true, email: true } }, reads: { select: { userId: true, readAt: true } }, attachments: true, replyTo: { include: { sender: { select: { name: true } } } } },
-    orderBy: { createdAt: 'desc' }, take: limit + 1
+    where,
+    include: {
+      sender: { select: { id: true, name: true, email: true } },
+      reads: { select: { userId: true, readAt: true } },
+      attachments: true,
+      replyTo: { include: { sender: { select: { name: true } } } }
+    },
+    orderBy: { createdAt: 'desc' },
+    take: limit + 1
   });
-
   const hasNext = messages.length > limit;
   if (hasNext) messages.pop();
-
   res.json({
     messages: messages.map(formatMessage).reverse(),
     pagination: { hasNext, before: messages.length ? messages[0].createdAt.toISOString() : null }
@@ -307,57 +308,73 @@ app.post('/messages', authMiddleware, async (req: express.Request & { user?: Aut
   const senderId = req.user!.userId;
   const idempotencyKey = String(req.get('x-idempotency-key') || '');
   if (idempotencyKey && processedMutations.has(`${senderId}:${idempotencyKey}`)) return res.json(processedMutations.get(`${senderId}:${idempotencyKey}`));
-
   const member = await ensureChatMembership(senderId, chatId);
   if (!member) return res.status(403).json({ message: 'Forbidden' });
 
+  // === РЕДАКТИРОВАНИЕ СООБЩЕНИЯ ===
   if (editMessageId) {
     const existing = await prisma.message.findUnique({ where: { id: editMessageId } });
     if (!existing || existing.senderId !== senderId || existing.chatId !== chatId) return res.status(404).json({ message: 'Message not found or forbidden' });
-    const updated = await prisma.message.update({ 
-      where: { id: editMessageId }, 
-      data: { body }, 
-      include: { sender: { select: { id: true, name: true, email: true } }, reads: true, attachments: true, replyTo: { include: { sender: { select: { name: true } } } } } 
-    });
-    const formatted = formatMessage(message);
-    io.to(`chat:${chatId}`).emit('message:new', formatted);
-    io.to(`chat:${chatId}`).emit('typing:update', { chatId, userId: senderId, isTyping: false });
-
-    // 🔔 PUSH-УВЕДОМЛЕНИЯ
-    const chatMembers = await prisma.chatMember.findMany({ where: { chatId }, include: { user: true } });
-    for (const member of chatMembers) {
-      if (member.userId !== senderId) {
-        // Отправляем пуш только тем, кто не в сети (упрощённая логика)
-        const isOnline = (presenceCounts.get(member.userId) || 0) > 0;
-        if (!isOnline) {
-          sendPushNotification(
-            member.userId,
-            `💬 ${message.sender.name}`,
-            formatted.body || '📎 Новое вложение',
-            '/icon-192.png',
-            { chatId, messageId: message.id }
-          ).catch(console.error); // Не блокируем ответ HTTP
-        }
+    
+    const updated = await prisma.message.update({
+      where: { id: editMessageId },
+      data: { body }, // ✅ FIX: Добавлен ключ 'data:'
+      include: {
+        sender: { select: { id: true, name: true, email: true } },
+        reads: true,
+        attachments: true,
+        replyTo: { include: { sender: { select: { name: true } } } }
       }
-    }
-
+    });
+    
+    const formatted = formatMessage(updated); // ✅ FIX: Использована переменная 'updated', а не 'message'
+    io.to(`chat:${chatId}`).emit('message:updated', formatted); // ✅ FIX: Правильное событие 'message:updated'
+    io.to(`chat:${chatId}`).emit('typing:update', { chatId, userId: senderId, isTyping: false });
+    
+    // ❌ УДАЛЕНО: Отправка push при редактировании не нужна
+    
     if (idempotencyKey) processedMutations.set(`${senderId}:${idempotencyKey}`, formatted);
-    res.json(formatted);
+    return res.json(formatted);
   }
 
+  // === НОВОЕ СООБЩЕНИЕ ===
   let replyToMessageIdSafe = replyToMessageId;
   if (replyToMessageIdSafe) {
     const replyTarget = await prisma.message.findUnique({ where: { id: replyToMessageIdSafe } });
     if (!replyTarget || replyTarget.chatId !== chatId) replyToMessageIdSafe = undefined;
   }
-
-  const message = await prisma.message.create({ 
-    data: { chatId, senderId, body, replyToMessageId: replyToMessageIdSafe },
-    include: { sender: { select: { id: true, name: true, email: true } }, reads: true, attachments: true, replyTo: { include: { sender: { select: { name: true } } } } }
+  
+  const message = await prisma.message.create({
+    data: { chatId, senderId, body, replyToMessageId: replyToMessageIdSafe }, // ✅ FIX: Добавлен ключ 'data:'
+    include: {
+      sender: { select: { id: true, name: true, email: true } },
+      reads: true,
+      attachments: true,
+      replyTo: { include: { sender: { select: { name: true } } } }
+    }
   });
+  
   const formatted = formatMessage(message);
   io.to(`chat:${chatId}`).emit('message:new', formatted);
   io.to(`chat:${chatId}`).emit('typing:update', { chatId, userId: senderId, isTyping: false });
+
+  // 🔔 PUSH-УВЕДОМЛЕНИЯ (только для новых сообщений!)
+  const chatMembers = await prisma.chatMember.findMany({ where: { chatId }, include: { user: true } });
+  for (const m of chatMembers) {
+    if (m.userId !== senderId) {
+      const isOnline = (presenceCounts.get(m.userId) || 0) > 0;
+      if (!isOnline) {
+        sendPushNotification(
+          m.userId,
+          `💬 ${message.sender.name}`,
+          formatted.body || '📎 Новое вложение',
+          '/icon-192.png',
+          { chatId, messageId: message.id }
+        ).catch(console.error);
+      }
+    }
+  }
+
   if (idempotencyKey) processedMutations.set(`${senderId}:${idempotencyKey}`, formatted);
   res.json(formatted);
 });
@@ -371,10 +388,15 @@ app.post('/messages/:messageId/reactions', authMiddleware, async (req: express.R
   if (!member) return res.status(403).json({ message: 'Forbidden' });
   const current = (message as any).reactions || {};
   const next = { ...current, [parsed.data.emoji]: Number(current[parsed.data.emoji] || 0) + 1 };
-  const updated = await prisma.message.update({ 
-    where: { id: message.id }, 
-    data: { reactions: next }, 
-    include: { sender: { select: { id: true, name: true, email: true } }, reads: true, attachments: true, replyTo: { include: { sender: { select: { name: true } } } } } 
+  const updated = await prisma.message.update({
+    where: { id: message.id },
+    data: { reactions: next }, // ✅ FIX: Добавлен ключ 'data:'
+    include: {
+      sender: { select: { id: true, name: true, email: true } },
+      reads: true,
+      attachments: true,
+      replyTo: { include: { sender: { select: { name: true } } } }
+    }
   });
   const formatted = formatMessage(updated);
   io.to(`chat:${message.chatId}`).emit('message:updated', formatted);
@@ -385,11 +407,15 @@ app.delete('/messages/:messageId', authMiddleware, async (req: express.Request &
   const message = await prisma.message.findUnique({ where: { id: req.params.messageId } });
   if (!message) return res.status(404).json({ message: 'Message not found' });
   if (message.senderId !== req.user!.userId) return res.status(403).json({ message: 'Forbidden' });
-  // FIX: Removed double comma, ensured 'data:' key
-  const updated = await prisma.message.update({ 
-    where: { id: message.id }, 
-    data: { body: null, deletedAt: new Date() }, 
-    include: { sender: { select: { id: true, name: true, email: true } }, reads: true, attachments: true, replyTo: { include: { sender: { select: { name: true } } } } } 
+  const updated = await prisma.message.update({
+    where: { id: message.id },
+    data: { body: null, deletedAt: new Date() }, // ✅ FIX: Добавлен ключ 'data:'
+    include: {
+      sender: { select: { id: true, name: true, email: true } },
+      reads: true,
+      attachments: true,
+      replyTo: { include: { sender: { select: { name: true } } } }
+    }
   });
   const formatted = formatMessage(updated);
   io.to(`chat:${message.chatId}`).emit('message:updated', formatted);
@@ -406,7 +432,17 @@ app.post('/messages/:messageId/attachments', authMiddleware, upload.single('file
   const member = await ensureChatMembership(userId, message.chatId);
   if (!member) return res.status(403).json({ message: 'Forbidden' });
   const url = `${req.protocol}://${req.get('host')}/uploads/${path.basename(file.path)}`;
-  const attachment = await prisma.attachment.create({ data: { messageId, uploaderId: userId, originalName: file.originalname, mimeType: file.mimetype, sizeBytes: file.size, storagePath: file.path, url } });
+  const attachment = await prisma.attachment.create({
+    data: { // ✅ FIX: Добавлен ключ 'data:'
+      messageId,
+      uploaderId: userId,
+      originalName: file.originalname,
+      mimeType: file.mimetype,
+      sizeBytes: file.size,
+      storagePath: file.path,
+      url
+    }
+  });
   io.to(`chat:${message.chatId}`).emit('attachment:new', { chatId: message.chatId, messageId, attachment });
   res.json(attachment);
 });
@@ -425,10 +461,9 @@ app.post('/chats/read', authMiddleware, async (req: express.Request & { user?: A
   const member = await ensureChatMembership(req.user!.userId, parsed.data.chatId);
   if (!member) return res.status(403).json({ message: 'Forbidden' });
   const now = new Date();
-  // FIX: Corrected variable name to parsed.data.chatId
-  await prisma.chatMember.update({ 
-    where: { userId_chatId: { userId: req.user!.userId, chatId: parsed.data.chatId } }, 
-    data: { lastReadAt: now } 
+  await prisma.chatMember.update({
+    where: { userId_chatId: { userId: req.user!.userId, chatId: parsed.data.chatId } },
+    data: { lastReadAt: now } // ✅ FIX: Добавлен ключ 'data:'
   });
   res.json({ ok: true, chatId: parsed.data.chatId, lastReadAt: now });
 });
@@ -440,17 +475,38 @@ app.get('/search', authMiddleware, async (req: express.Request & { user?: AuthUs
   const filterType = parsed.data.type || 'all';
   const userId = req.user!.userId;
   const chats = await prisma.chat.findMany({
-    where: { members: { some: { userId } }, OR: filterType === 'users' ? [] : [{ title: { contains: q, mode: 'insensitive' } }, { messages: { some: { body: { contains: q, mode: 'insensitive' } } } }] },
-    include: { members: { include: { user: { select: { id: true, name: true, email: true } } } }, messages: { orderBy: { createdAt: 'desc' }, take: 5, include: { sender: { select: { id: true, name: true, email: true } }, reads: { select: { userId: true, readAt: true } }, attachments: true, replyTo: { include: { sender: { select: { name: true } } } } } } },
+    where: {
+      members: { some: { userId } },
+      deletedAt: null,
+      OR: filterType === 'users' ? [] : [{ title: { contains: q, mode: 'insensitive' } }, { messages: { some: { body: { contains: q, mode: 'insensitive' }, deletedAt: null } } }]
+    },
+    include: {
+      members: { include: { user: { select: { id: true, name: true, email: true } } } },
+      messages: {
+        where: { deletedAt: null },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+        include: {
+          sender: { select: { id: true, name: true, email: true } },
+          reads: { select: { userId: true, readAt: true } },
+          attachments: true,
+          replyTo: { include: { sender: { select: { name: true } } } }
+        }
+      }
+    },
     take: 20
   });
   const users = await prisma.user.findMany({
-    where: { id: { not: userId }, OR: [{ name: { contains: q, mode: 'insensitive' } }, { email: { contains: q, mode: 'insensitive' } }] },
+    where: { id: { not: userId }, deletedAt: null, OR: [{ name: { contains: q, mode: 'insensitive' } }, { email: { contains: q, mode: 'insensitive' } }] },
     select: { id: true, name: true, email: true, createdAt: true },
     take: 20
   });
   const messages = chats.flatMap((chat) => chat.messages.map((message) => ({ ...formatMessage(message), chatId: chat.id })));
-  res.json({ chats: chats.map((chat) => ({ ...chat, messages: chat.messages.map(formatMessage) })), users: users.map((u) => ({ ...u, online: (presenceCounts.get(u.id) || 0) > 0, lastSeenAt: lastSeenMap.get(u.id) || null })), messages });
+  res.json({
+    chats: chats.map((chat) => ({ ...chat, messages: chat.messages.map(formatMessage) })),
+    users: users.map((u) => ({ ...u, online: (presenceCounts.get(u.id) || 0) > 0, lastSeenAt: lastSeenMap.get(u.id) || null })),
+    messages
+  });
 });
 
 app.get('/chats/:chatId/pins', authMiddleware, async (req: express.Request & { user?: AuthUser }, res) => {
@@ -458,7 +514,17 @@ app.get('/chats/:chatId/pins', authMiddleware, async (req: express.Request & { u
   if (!member) return res.status(403).json({ message: 'Forbidden' });
   const pins = await prisma.pinnedMessage.findMany({
     where: { chatId: req.params.chatId },
-    include: { message: { include: { sender: { select: { id: true, name: true, email: true } }, reads: { select: { userId: true, readAt: true } }, attachments: true, replyTo: { include: { sender: { select: { name: true } } } } } }, pinnedBy: { select: { id: true, name: true, email: true } } },
+    include: {
+      message: {
+        include: {
+          sender: { select: { id: true, name: true, email: true } },
+          reads: { select: { userId: true, readAt: true } },
+          attachments: true,
+          replyTo: { include: { sender: { select: { name: true } } } }
+        }
+      },
+      pinnedBy: { select: { id: true, name: true, email: true } }
+    },
     orderBy: { createdAt: 'desc' }
   });
   res.json(pins.map((pin) => ({ ...pin, message: formatMessage(pin.message) })));
@@ -473,7 +539,17 @@ app.post('/messages/:messageId/pin', authMiddleware, async (req: express.Request
     where: { chatId_messageId: { chatId: message.chatId, messageId: message.id } },
     update: {},
     create: { chatId: message.chatId, messageId: message.id, pinnedById: req.user!.userId },
-    include: { message: { include: { sender: { select: { id: true, name: true, email: true } }, reads: { select: { userId: true, readAt: true } }, attachments: true, replyTo: { include: { sender: { select: { name: true } } } } } }, pinnedBy: { select: { id: true, name: true, email: true } } }
+    include: {
+      message: {
+        include: {
+          sender: { select: { id: true, name: true, email: true } },
+          reads: { select: { userId: true, readAt: true } },
+          attachments: true,
+          replyTo: { include: { sender: { select: { name: true } } } }
+        }
+      },
+      pinnedBy: { select: { id: true, name: true, email: true } }
+    }
   });
   io.to(`chat:${message.chatId}`).emit('message:pinned', { chatId: message.chatId, pin: { ...pin, message: formatMessage(pin.message) } });
   res.json({ ...pin, message: formatMessage(pin.message) });
@@ -493,8 +569,11 @@ app.get('/chats/:chatId/media', authMiddleware, async (req: express.Request & { 
   const member = await ensureChatMembership(req.user!.userId, req.params.chatId);
   if (!member) return res.status(403).json({ message: 'Forbidden' });
   const attachments = await prisma.attachment.findMany({
-    where: { message: { chatId: req.params.chatId } },
-    include: { uploader: { select: { id: true, name: true, email: true } }, message: { select: { id: true, body: true, createdAt: true } } },
+    where: { message: { chatId: req.params.chatId, deletedAt: null } }, // ✅ FIX: Добавлен фильтр deletedAt: null
+    include: {
+      uploader: { select: { id: true, name: true, email: true } },
+      message: { select: { id: true, body: true, createdAt: true } }
+    },
     orderBy: { createdAt: 'desc' }
   });
   res.json(attachments);
@@ -505,8 +584,17 @@ app.get('/notifications', authMiddleware, async (req: express.Request & { user?:
   const memberships = await prisma.chatMember.findMany({ where: { userId } });
   const notifications = await Promise.all(memberships.map(async (m) => {
     const msgs = await prisma.message.findMany({
-      where: { chatId: m.chatId, senderId: { not: userId }, createdAt: m.lastReadAt ? { gt: m.lastReadAt } : undefined },
-      include: { sender: { select: { id: true, name: true, email: true } }, attachments: true, replyTo: { include: { sender: { select: { name: true } } } } },
+      where: {
+        chatId: m.chatId,
+        senderId: { not: userId },
+        deletedAt: null, // ✅ FIX: Добавлен фильтр deletedAt: null
+        createdAt: m.lastReadAt ? { gt: m.lastReadAt } : undefined
+      },
+      include: {
+        sender: { select: { id: true, name: true, email: true } },
+        attachments: true,
+        replyTo: { include: { sender: { select: { name: true } } } }
+      },
       orderBy: { createdAt: 'desc' },
       take: 5
     });
@@ -515,10 +603,13 @@ app.get('/notifications', authMiddleware, async (req: express.Request & { user?:
   res.json(notifications.flat().sort((a, b) => +new Date(b.message.createdAt) - +new Date(a.message.createdAt)));
 });
 
-// === NEW: /me Endpoints (FIXED 'data:' keys) ===
+// === NEW: /me Endpoints ===
 app.get('/me', authMiddleware, async (req: express.Request & { user?: AuthUser }, res) => {
   try {
-    const user = await prisma.user.findUnique({ where: { id: req.user!.userId }, select: { id: true, name: true, email: true } });
+    const user = await prisma.user.findUnique({
+      where: { id: req.user!.userId, deletedAt: null }, // ✅ FIX: Добавлен фильтр deletedAt: null
+      select: { id: true, name: true, email: true }
+    });
     if (!user) return res.status(404).json({ message: 'User not found' });
     res.json({ ...user, online: (presenceCounts.get(user.id) || 0) > 0 });
   } catch (error) {
@@ -532,7 +623,7 @@ app.patch('/me', authMiddleware, async (req: express.Request & { user?: AuthUser
   if (!parsed.success) return res.status(400).json(parsed.error.flatten());
   try {
     const updated = await prisma.user.update({
-      where: { id: req.user!.userId },
+      where: { id: req.user!.userId, deletedAt: null }, // ✅ FIX: Добавлен фильтр deletedAt: null
       data: { name: parsed.data.name },
       select: { id: true, name: true, email: true }
     });
@@ -548,13 +639,13 @@ app.post('/me/change-password', authMiddleware, async (req: express.Request & { 
   if (!parsed.success) return res.status(400).json(parsed.error.flatten());
   if (parsed.data.nextPassword !== parsed.data.confirmPassword) return res.status(400).json({ message: 'New passwords do not match' });
   try {
-    const user = await prisma.user.findUnique({ where: { id: req.user!.userId } });
+    const user = await prisma.user.findUnique({ where: { id: req.user!.userId, deletedAt: null } }); // ✅ FIX: Добавлен фильтр deletedAt: null
     if (!user) return res.status(404).json({ message: 'User not found' });
     const isValid = await comparePassword(parsed.data.currentPassword, user.passwordHash);
     if (!isValid) return res.status(400).json({ message: 'Current password is incorrect' });
-    await prisma.user.update({ 
-      where: { id: req.user!.userId }, 
-      data: { passwordHash: await hashPassword(parsed.data.nextPassword) } 
+    await prisma.user.update({
+      where: { id: req.user!.userId },
+      data: { passwordHash: await hashPassword(parsed.data.nextPassword) }
     });
     res.json({ message: 'Password successfully changed' });
   } catch (error) {
@@ -567,7 +658,10 @@ app.delete('/me', authMiddleware, async (req: express.Request & { user?: AuthUse
   const parsed = deleteMeSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json(parsed.error.flatten());
   try {
-    await prisma.user.delete({ where: { id: req.user!.userId } });
+    await prisma.user.update({
+      where: { id: req.user!.userId },
+      data: { deletedAt: new Date() } // ✅ FIX: Soft delete вместо hard delete
+    });
     res.json({ message: 'Account successfully deleted' });
   } catch (error: any) {
     if (error.code === 'P2003') return res.status(400).json({ message: 'Cannot delete account: active relations exist. Leave or delete chats first.' });
@@ -594,19 +688,16 @@ io.use((socket, next) => {
 io.on('connection', async (socket) => {
   const user = socket.data.user as AuthUser;
   const deviceId = socket.data.deviceId as string;
-  
   const hb = setInterval(() => {
     updatePresence(user.userId, 0);
   }, 15000);
   socketHeartbeatTimers.set(socket.id, hb);
-
   const memberships = await prisma.chatMember.findMany({ where: { userId: user.userId } });
   memberships.forEach((m) => socket.join(`chat:${m.chatId}`));
   socket.emit('presence:ready', { userId: user.userId, chatIds: memberships.map((m) => m.chatId) });
 
-  // FIX: Corrected arrow function syntax "() =>"
   socket.on('presence:heartbeat', () => updatePresence(user.userId, 0));
-  
+
   socket.on('chat:join', async (chatId: string) => {
     const member = await ensureChatMembership(user.userId, chatId);
     if (member) socket.join(`chat:${chatId}`);
@@ -617,11 +708,14 @@ io.on('connection', async (socket) => {
     if (!parsed.success) return;
     const member = await ensureChatMembership(user.userId, parsed.data.chatId);
     if (!member || !parsed.data.body?.trim()) return;
-    
-    // FIX: Added 'data:' key to prisma.create
     const message = await prisma.message.create({
-      data: { chatId: parsed.data.chatId, senderId: user.userId, body: parsed.data.body },
-      include: { sender: { select: { id: true, name: true, email: true } }, reads: { select: { userId: true, readAt: true } }, attachments: true, replyTo: { include: { sender: { select: { name: true } } } } }
+      data: { chatId: parsed.data.chatId, senderId: user.userId, body: parsed.data.body }, // ✅ FIX: Добавлен ключ 'data:'
+      include: {
+        sender: { select: { id: true, name: true, email: true } },
+        reads: { select: { userId: true, readAt: true } },
+        attachments: true,
+        replyTo: { include: { sender: { select: { name: true } } } }
+      }
     });
     io.to(`chat:${parsed.data.chatId}`).emit('message:new', formatMessage(message));
   });
@@ -631,10 +725,9 @@ io.on('connection', async (socket) => {
     if (!member) return;
     const key = `${user.userId}:${chatId}`;
     if (typingTimers.has(key)) clearTimeout(typingTimers.get(key)!);
-    // FIX: Corrected arrow function syntax inside setTimeout
-    typingTimers.set(key, setTimeout(() => { 
-      io.to(`chat:${chatId}`).emit('typing:update', { chatId, userId: user.userId, isTyping: false }); 
-      typingTimers.delete(key); 
+    typingTimers.set(key, setTimeout(() => {
+      io.to(`chat:${chatId}`).emit('typing:update', { chatId, userId: user.userId, isTyping: false });
+      typingTimers.delete(key);
     }, 5000));
     socket.to(`chat:${chatId}`).emit('typing:update', { chatId, userId: user.userId, isTyping: true });
   });
@@ -647,8 +740,8 @@ io.on('connection', async (socket) => {
     socket.to(`chat:${chatId}`).emit('typing:update', { chatId, userId: user.userId, isTyping: false });
   });
 
-  socket.on('message:read', async ({ messageId }: { messageId: string }) => { 
-    await markReadForMessage(user.userId, messageId); 
+  socket.on('message:read', async ({ messageId }: { messageId: string }) => {
+    await markReadForMessage(user.userId, messageId);
   });
 
   socket.on('disconnect', async () => {

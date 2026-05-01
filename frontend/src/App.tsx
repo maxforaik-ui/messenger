@@ -7,9 +7,6 @@ import { ChatWindow } from './components/ChatWindow';
 import { SettingsModal } from './components/SettingsModal';
 import { initSocket, disconnectSocket } from './lib/socket';
 import { authFetch } from './lib/api';
-import { requestPushPermission, subscribeToPush } from './lib/push';
-
-import { Chat, Message } from './types';
 
 export function App() {
   const { me, token, theme, ui, setUi, setUsers, setChats, setNotifications } = useAppStore();
@@ -25,21 +22,8 @@ export function App() {
       authFetch('/notifications').then(r => r.json())
     ]).then(([usersData, chatsData, notificationsData]) => {
       setUsers(usersData);
-      setChats(chatsData.map((c: Chat) => ({ ...c, pinned: false, draft: '' })));
+      setChats(chatsData.map((c: any) => ({ ...c, pinned: false, draft: '' })));
       setNotifications(notificationsData);
-      
-      // 🔔 Инициализация Push-уведомлений после загрузки данных
-      const initPush = async () => {
-        const hasPermission = await requestPushPermission();
-        if (hasPermission && import.meta.env.VITE_VAPID_PUBLIC_KEY) {
-          try {
-            await subscribeToPush(import.meta.env.VITE_VAPID_PUBLIC_KEY);
-          } catch (e) {
-            console.error('Push subscribe error:', e);
-          }
-        }
-      };
-      initPush();
     }).catch(console.error);
     return () => disconnectSocket();
   }, [token, me?.id, setUsers, setChats, setNotifications]);
@@ -50,6 +34,7 @@ export function App() {
     document.body.style.color = p.text;
   }, [p]);
 
+  // ✅ FIX: Реактивный тост через ui.toast из хука
   React.useEffect(() => {
     if (ui.toast) {
       const t = setTimeout(() => setUi({ toast: '' }), 3000);

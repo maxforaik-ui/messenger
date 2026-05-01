@@ -18,7 +18,14 @@ interface AppState {
   typingUsers: Record<string, boolean>; setTypingUsers: (t: Record<string, boolean> | ((p: Record<string, boolean>) => Record<string, boolean>)) => void;
   notifications: NotificationPayload[]; setNotifications: (n: NotificationPayload[]) => void;
   theme: ThemeMode; toggleTheme: () => void;
-  ui: { showUsers: boolean; showSettings: boolean; showNotifications: boolean; search: string; toast: string };
+  ui: { 
+    showUsers: boolean; 
+    showSettings: boolean; 
+    showNotifications: boolean; 
+    showProfile: boolean; // ← Добавлено
+    search: string; 
+    toast: string 
+  };
   setUi: (p: Partial<AppState['ui']>) => void;
   reset: () => void;
 }
@@ -38,7 +45,7 @@ export const useAppStore = create<AppState>()(
       typingUsers: {}, setTypingUsers: (t) => set({ typingUsers: typeof t === 'function' ? t(get().typingUsers) : t }),
       notifications: [], setNotifications: (n) => set({ notifications: n }),
       theme: 'light', toggleTheme: () => set(s => ({ theme: s.theme === 'light' ? 'dark' : 'light' })),
-      ui: { showUsers: true, showSettings: false, showNotifications: false, search: '', toast: '' },
+      ui: { showUsers: false, showSettings: false, showNotifications: false, showProfile: false, search: '', toast: '' },
       setUi: (p) => set(s => ({ ui: { ...s.ui, ...p } })),
       reset: () => set({ token: null, me: null, chats: [], messages: [], users: [], activeChatId: '', typingUsers: {}, notifications: [], pendingFiles: [], ui: { ...get().ui, showSettings: false, showNotifications: false, toast: '' } })
     }),

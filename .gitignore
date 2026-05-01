@@ -23,6 +23,10 @@ tmp/npm-cache/
 .DS_Store
 Thumbs.db
 
+backend/node_modules/
+frontend/node_modules/
+frontend/dev-dist/
+
 # Compressed files
 *.zip
 *.gz
@@ -48,3 +52,7 @@ Thumbs.db
 *.tar.zst
 
 ```
+command.txt
+push.ps1
+backend/scripts/generate-vapid-keys.js
+frontend/package-lock.json

@@ -12,8 +12,8 @@ webpush.setVapidDetails(
 export async function subscribeUser(userId: string, subscription: PushSubscriptionJSON, userAgent?: string) {
   return prisma.pushSubscription.upsert({
     where: { endpoint: subscription.endpoint! },
-    update: { 
-      keys: subscription.keys as any, 
+    update: {
+      keys: subscription.keys as any,
       userAgent,
       lastUsedAt: new Date()
     },
@@ -43,7 +43,7 @@ export async function sendPushNotification(userId: string, title: string, body: 
     badge: '/icon-192.png',
     tag: `msg-${Date.now()}`,
     requireInteraction: true,
-    data: { 
+    data: {
       ...data,
       timestamp: Date.now(),
       url: data?.chatId ? `/chat/${data.chatId}` : '/'

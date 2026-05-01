@@ -9,27 +9,30 @@ datasource db {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
+  id           String    @id @default(cuid())
+  email        String    @unique
   name         String
   passwordHash String
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime? // Soft delete: вместо удаления аккаунта помечаем как удалённый
 
   // Связи с onDelete: Cascade/SetNull для безопасного удаления аккаунта
-  chats          ChatMember[]    @relation("UserChats")
-  sentMessages   Message[]       @relation("UserSentMessages")
-  readReceipts   MessageRead[]
-  uploadedFiles  Attachment[]
-  pinnedMessages PinnedMessage[]
+  chats             ChatMember[]       @relation("UserChats")
+  sentMessages      Message[]          @relation("UserSentMessages")
+  readReceipts      MessageRead[]
+  uploadedFiles     Attachment[]
+  pinnedMessages    PinnedMessage[]
+  pushSubscriptions PushSubscription[]
 }
 
 model Chat {
-  id        String   @id @default(cuid())
-  isDirect  Boolean  @default(false)
+  id        String    @id @default(cuid())
+  isDirect  Boolean   @default(false)
   title     String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // Soft delete: вместо удаления чата помечаем как удалённый
 
   members  ChatMember[]
   messages Message[]
@@ -39,9 +42,9 @@ model Chat {
 model ChatMember {
   userId     String
   chatId     String
-  role       String   @default("member") // owner, member, admin
+  role       String    @default("member") // owner, member, admin
   lastReadAt DateTime?
-  createdAt  DateTime @default(now())
+  createdAt  DateTime  @default(now())
 
   user User @relation("UserChats", fields: [userId], references: [id], onDelete: Cascade)
   chat Chat @relation(fields: [chatId], references: [id], onDelete: Cascade)
@@ -50,22 +53,22 @@ model ChatMember {
 }
 
 model Message {
-  id               String   @id @default(cuid())
+  id               String    @id @default(cuid())
   chatId           String
   senderId         String
-  body             String?  @db.Text
-  createdAt        DateTime @default(now())
+  body             String?   @db.Text
+  createdAt        DateTime  @default(now())
   deletedAt        DateTime?
-  reactions        Json?    @default("{}")
+  reactions        Json?     @default("{}")
   replyToMessageId String?
 
-  chat    Chat    @relation(fields: [chatId], references: [id], onDelete: Cascade)
-  sender  User    @relation("UserSentMessages", fields: [senderId], references: [id], onDelete: Cascade)
-  replyTo Message? @relation("MessageReplies", fields: [replyToMessageId], references: [id], onDelete: SetNull)
-  replies Message[] @relation("MessageReplies")
-  reads   MessageRead[]
+  chat        Chat           @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  sender      User           @relation("UserSentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  replyTo     Message?       @relation("MessageReplies", fields: [replyToMessageId], references: [id], onDelete: SetNull)
+  replies     Message[]      @relation("MessageReplies")
+  reads       MessageRead[]
   attachments Attachment[]
-  pin     PinnedMessage?
+  pin         PinnedMessage?
 
   @@index([chatId, createdAt])
 }
@@ -84,7 +87,7 @@ model MessageRead {
 model Attachment {
   id           String   @id @default(cuid())
   messageId    String
-  uploaderId   String?  // Сделано опциональным для безопасного удаления загрузчика
+  uploaderId   String? // Сделано опциональным для безопасного удаления загрузчика
   originalName String
   mimeType     String
   sizeBytes    Int
@@ -98,13 +101,27 @@ model Attachment {
 
 model PinnedMessage {
   chatId     String
-  messageId  String   @unique  // ← Добавлено для соответствия 1:1 relation
+  messageId  String   @unique // ← Добавлено для соответствия 1:1 relation
   pinnedById String?
   createdAt  DateTime @default(now())
 
-  chat    Chat    @relation(fields: [chatId], references: [id], onDelete: Cascade)
-  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
-  pinnedBy User?  @relation(fields: [pinnedById], references: [id], onDelete: SetNull)
+  chat     Chat    @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  message  Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  pinnedBy User?   @relation(fields: [pinnedById], references: [id], onDelete: SetNull)
 
   @@id([chatId, messageId])
+}
+
+model PushSubscription {
+  id         String    @id @default(cuid())
+  userId     String
+  endpoint   String    @unique // URL браузера для пушей
+  keys       Json // { p256dh: string, auth: string }
+  userAgent  String?
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
