@@ -1,7 +1,15 @@
 import React from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { themeTokens, createStyles } from '../styles/theme';
-import { authFetch, createIdempotencyKey } from '../lib/api';
+import { authFetch } from '../lib/api';
+import type { UserStatus } from '../types';
+
+const STATUS_LABELS: Record<NonNullable<UserStatus>, string> = {
+  online: 'В сети',
+  offline: 'Не в сети',
+  away: 'Отошёл',
+  dnd: 'Не беспокоить'
+};
 
 export function Sidebar() {
   // ✅ FIX: Добавлен 'setUsers'
@@ -29,7 +37,6 @@ export function Sidebar() {
   }, [chats, ui.search, me?.id]);
 
   const createDirect = async (id: string) => {
-    const idem = createIdempotencyKey();
     const res = await authFetch('/chats/direct', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -41,6 +48,25 @@ export function Sidebar() {
     setUi({ showUsers: false });
   };
 
+  // Установка статуса пользователя
+  const setStatus = async (status: UserStatus) => {
+    try {
+      const res = await authFetch('/me/status', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status })
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        useAppStore.getState().setMe(updated);
+      }
+    } catch (e) {
+      console.error('Set status error:', e);
+    }
+  };
+
+  const currentUserStatus: UserStatus = me?.status || (me?.online ? 'online' : 'offline');
+
   return (
     <aside style={s.sidebar}>
       <div style={s.sidebarTopbar}>
@@ -51,12 +77,43 @@ export function Sidebar() {
       </div>
 
       <div style={s.meCard}>
-        <div style={s.meAvatar}>{me?.name?.split(' ').map(x => x[0]).join('').toUpperCase() || '?'}</div>
+        <div style={{ position: 'relative' }}>
+          <div style={s.meAvatar}>{me?.name?.split(' ').map(x => x[0]).join('').toUpperCase() || '?'}</div>
+          <span style={{ 
+            position: 'absolute', 
+            bottom: 2, 
+            right: 2, 
+            width: 14, 
+            height: 14, 
+            borderRadius: '50%', 
+            background: currentUserStatus === 'online' ? '#22c55e' : currentUserStatus === 'away' ? '#f59e0b' : currentUserStatus === 'dnd' ? '#ef4444' : '#9ca3af',
+            border: `2px solid ${p.sidebar}`
+          }} />
+        </div>
         <div style={{ flex: 1 }}>
           <div style={s.meName}>{me?.name}</div>
-          <div style={s.meMeta}>{me?.email}</div>
+          <div style={{ ...s.meMeta, cursor: 'pointer' }} onClick={() => setUi({ showSettings: true })}>
+            {STATUS_LABELS[currentUserStatus]}
+          </div>
         </div>
-        <button style={s.logoutBtn} onClick={() => useAppStore.getState().reset()}>Выйти</button>
+        <div style={{ display: 'flex', gap: 4 }}>
+          <button 
+            onClick={() => setStatus('online')} 
+            style={{ ...s.logoutBtn, padding: '6px 10px', fontSize: 12, background: currentUserStatus === 'online' ? p.accentSoft : p.sidebarAlt }}
+            title="В сети"
+          >🟢</button>
+          <button 
+            onClick={() => setStatus('away')} 
+            style={{ ...s.logoutBtn, padding: '6px 10px', fontSize: 12, background: currentUserStatus === 'away' ? p.accentSoft : p.sidebarAlt }}
+            title="Отошёл"
+          >🟡</button>
+          <button 
+            onClick={() => setStatus('dnd')} 
+            style={{ ...s.logoutBtn, padding: '6px 10px', fontSize: 12, background: currentUserStatus === 'dnd' ? p.accentSoft : p.sidebarAlt }}
+            title="Не беспокоить"
+          >🔴</button>
+          <button style={s.logoutBtn} onClick={() => useAppStore.getState().reset()}>Выйти</button>
+        </div>
       </div>
 
       {ui.showUsers ? (
@@ -88,7 +145,7 @@ export function Sidebar() {
                     <div style={s.avatarSmall}>{title?.[0]?.toUpperCase() || '#'}</div>
                     <div style={{ flex: 1, textAlign: 'left' }}>
                       <div style={s.chatTopLine}><span style={s.chatName}>{title}</span></div>
-                      <div style={s.chatSubline}>{c.isDirect ? (peer?.online ? 'online' : 'offline') : `${c.members.length} участников`}</div>
+                      <div style={s.chatSubline}>{c.isDirect ? (STATUS_LABELS[peer?.status || (peer?.online ? 'online' : 'offline')]) : `${c.members.length} участников`}</div>
                     </div>
                     {!!c.unreadCount && <span style={s.unreadBadge}>{c.unreadCount}</span>}
                   </button>

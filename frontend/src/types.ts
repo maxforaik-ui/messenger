@@ -1,9 +1,12 @@
 // Common types for the messenger application
 
+export type UserStatus = 'online' | 'offline' | 'away' | 'dnd';
+
 export type User = { 
   id: string; 
   name: string; 
   email: string; 
+  status?: UserStatus;
   online?: boolean;
   deletedAt?: Date | null;
 };
@@ -17,6 +20,7 @@ export type Chat = {
   pinned?: boolean; 
   draft?: string;
   deletedAt?: Date | null;
+  lastMessage?: Message | null;
 };
 
 export type Attachment = { 
