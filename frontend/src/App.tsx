@@ -5,6 +5,8 @@ import { AuthScreen } from './components/AuthScreen';
 import { Sidebar } from './components/Sidebar';
 import { ChatWindow } from './components/ChatWindow';
 import { SettingsModal } from './components/SettingsModal';
+import { PasswordModal } from './components/PasswordModal';
+import { InstallPrompt } from './components/InstallPrompt';
 import { initSocket, disconnectSocket } from './lib/socket';
 import { authFetch } from './lib/api';
 
@@ -22,7 +24,7 @@ export function App() {
       authFetch('/notifications').then(r => r.json())
     ]).then(([usersData, chatsData, notificationsData]) => {
       setUsers(usersData);
-      setChats(chatsData.map((c: any) => ({ ...c, pinned: false, draft: '' })));
+      setChats(chatsData.map((c: any) => ({...c, pinned: false, draft: ''})));
       setNotifications(notificationsData);
     }).catch(console.error);
     return () => disconnectSocket();
@@ -34,7 +36,6 @@ export function App() {
     document.body.style.color = p.text;
   }, [p]);
 
-  // ✅ FIX: Реактивный тост через ui.toast из хука
   React.useEffect(() => {
     if (ui.toast) {
       const t = setTimeout(() => setUi({ toast: '' }), 3000);
@@ -47,9 +48,11 @@ export function App() {
   return (
     <div style={s.layout}>
       {ui.toast && <div style={s.toast}>{ui.toast}</div>}
+      <InstallPrompt />
       <Sidebar />
       <ChatWindow />
       <SettingsModal />
+      <PasswordModal />
     </div>
   );
 }

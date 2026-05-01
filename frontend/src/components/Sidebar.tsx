@@ -6,13 +6,8 @@ import { authFetch, createIdempotencyKey } from '../lib/api';
 // Компонент индикатора статуса
 const StatusDot = ({ online }: { online?: boolean }) => (
   <span style={{
-    display: 'inline-block',
-    width: 8,
-    height: 8,
-    borderRadius: '50%',
-    background: online ? '#22c55e' : '#9ca3af',
-    marginRight: 6,
-    flexShrink: 0
+    display: 'inline-block', width: 8, height: 8, borderRadius: '50%',
+    background: online ? '#22c55e' : '#9ca3af', marginRight: 6, flexShrink: 0
   }} />
 );
 
@@ -20,35 +15,28 @@ export function Sidebar() {
   const { theme, ui, setUi, me, users, chats, activeChatId, setActiveChatId, setChats, setUsers, toggleTheme, setMe, reset } = useAppStore();
   const p = themeTokens[theme];
   const s = React.useMemo(() => createStyles(p), [p]);
-  
   const [name, setName] = React.useState(me?.name || '');
   const [saving, setSaving] = React.useState(false);
   const [activeTab, setActiveTab] = React.useState<'chats' | 'users' | 'settings'>('chats');
 
   React.useEffect(() => {
     if (!me?.id) return;
-    authFetch('/users')
-      .then(r => r.json())
-      .then(data => setUsers(data))
-      .catch(console.error);
+    authFetch('/users').then(r => r.json()).then(data => setUsers(data)).catch(console.error);
   }, [me?.id, setUsers]);
 
   const visibleChats = React.useMemo(() => {
     const search = ui.search.toLowerCase();
-    return chats
-      .filter(c => {
-        const peer = c.members.find(m => m.user.id !== me?.id)?.user;
-        const title = c.isDirect ? peer?.name || 'Личный' : c.title || 'Группа';
-        return title.toLowerCase().includes(search);
-      })
-      .sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned));
+    return chats.filter(c => {
+      const peer = c.members.find(m => m.user.id !== me?.id)?.user;
+      const title = c.isDirect ? peer?.name || 'Личный' : c.title || 'Группа';
+      return title.toLowerCase().includes(search);
+    }).sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned));
   }, [chats, ui.search, me?.id]);
 
   const createDirect = async (id: string) => {
     const idem = createIdempotencyKey();
     const res = await authFetch('/chats/direct', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ peerUserId: id })
     });
     const chat = await res.json();
@@ -62,8 +50,7 @@ export function Sidebar() {
     setSaving(true);
     try {
       const res = await authFetch('/me', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name })
       });
       if (!res.ok) throw new Error('Ошибка сохранения');
@@ -79,16 +66,13 @@ export function Sidebar() {
 
   return (
     <aside style={s.sidebar}>
-      {/* Topbar: Поиск + Настройки (⚙️) */}
+      {/* Topbar: Только поиск (шестеренка убрана) */}
       <div style={s.sidebarTopbar}>
         <input 
-          placeholder="Поиск..." 
-          value={ui.search} 
+          placeholder="Поиск..." value={ui.search} 
           onChange={e => setUi({ search: e.target.value })} 
           style={{ ...s.searchInput, flex: 1 }} 
         />
-        {/* Кнопка настроек открывает SettingsModal (смена пароля) */}
-        <button style={s.iconBtn} onClick={() => setUi({ showSettings: true })} title="Настройки">⚙️</button>
       </div>
 
       {/* Профиль пользователя */}
@@ -104,59 +88,13 @@ export function Sidebar() {
 
       {/* Вкладки: Чаты | Контакты | Настройки */}
       <div style={{ display: 'flex', gap: 4, padding: '8px 12px', borderBottom: `1px solid ${p.border}` }}>
-        <button 
-          onClick={() => setActiveTab('chats')}
-          style={{ 
-            flex: 1, 
-            padding: '8px 12px', 
-            borderRadius: 8, 
-            border: 'none', 
-            background: activeTab === 'chats' ? p.accentSoft : 'transparent',
-            color: activeTab === 'chats' ? p.accent : p.muted,
-            cursor: 'pointer',
-            fontWeight: activeTab === 'chats' ? 600 : 400,
-            fontSize: 13
-          }}
-        >
-          💬 Чаты
-        </button>
-        <button 
-          onClick={() => setActiveTab('users')}
-          style={{ 
-            flex: 1, 
-            padding: '8px 12px', 
-            borderRadius: 8, 
-            border: 'none', 
-            background: activeTab === 'users' ? p.accentSoft : 'transparent',
-            color: activeTab === 'users' ? p.accent : p.muted,
-            cursor: 'pointer',
-            fontWeight: activeTab === 'users' ? 600 : 400,
-            fontSize: 13
-          }}
-        >
-          👥 Контакты
-        </button>
-        <button 
-          onClick={() => setActiveTab('settings')}
-          style={{ 
-            flex: 1, 
-            padding: '8px 12px', 
-            borderRadius: 8, 
-            border: 'none', 
-            background: activeTab === 'settings' ? p.accentSoft : 'transparent',
-            color: activeTab === 'settings' ? p.accent : p.muted,
-            cursor: 'pointer',
-            fontWeight: activeTab === 'settings' ? 600 : 400,
-            fontSize: 13
-          }}
-        >
-          ⚙️
-        </button>
+        <button onClick={() => setActiveTab('chats')} style={{ flex: 1, padding: '8px 12px', borderRadius: 8, border: 'none', background: activeTab === 'chats' ? p.accentSoft : 'transparent', color: activeTab === 'chats' ? p.accent : p.muted, cursor: 'pointer', fontWeight: activeTab === 'chats' ? 600 : 400, fontSize: 13 }}>💬 Чаты</button>
+        <button onClick={() => setActiveTab('users')} style={{ flex: 1, padding: '8px 12px', borderRadius: 8, border: 'none', background: activeTab === 'users' ? p.accentSoft : 'transparent', color: activeTab === 'users' ? p.accent : p.muted, cursor: 'pointer', fontWeight: activeTab === 'users' ? 600 : 400, fontSize: 13 }}>👥 Контакты</button>
+        <button onClick={() => setActiveTab('settings')} style={{ flex: 1, padding: '8px 12px', borderRadius: 8, border: 'none', background: activeTab === 'settings' ? p.accentSoft : 'transparent', color: activeTab === 'settings' ? p.accent : p.muted, cursor: 'pointer', fontWeight: activeTab === 'settings' ? 600 : 400, fontSize: 13 }}>⚙️</button>
       </div>
 
       {/* Контент вкладок */}
       <div style={s.panelWrap}>
-        {/* Вкладка ЧАТЫ */}
         {activeTab === 'chats' && (
           <div style={s.chatList}>
             {visibleChats.length === 0 && <div style={s.emptyState}>Нет чатов</div>}
@@ -174,9 +112,7 @@ export function Sidebar() {
                           {title}
                         </span>
                       </div>
-                      <div style={s.chatSubline}>
-                        {c.isDirect ? (peer?.online ? 'online' : 'offline') : `${c.members.length} участников`}
-                      </div>
+                      <div style={s.chatSubline}>{c.isDirect ? (peer?.online ? 'online' : 'offline') : `${c.members.length} участников`}</div>
                     </div>
                     {!!c.unreadCount && <span style={s.unreadBadge}>{c.unreadCount}</span>}
                   </button>
@@ -186,7 +122,6 @@ export function Sidebar() {
           </div>
         )}
 
-        {/* Вкладка КОНТАКТЫ */}
         {activeTab === 'users' && (
           <div style={s.userList}>
             {users.filter(u => u.id !== me?.id).map(u => (
@@ -205,58 +140,30 @@ export function Sidebar() {
           </div>
         )}
 
-        {/* Вкладка НАСТРОЙКИ */}
         {activeTab === 'settings' && (
           <div style={{ display: 'grid', gap: 16, padding: '12px 8px' }}>
             {/* Тема */}
             <div>
               <div style={{ fontSize: 13, fontWeight: 600, color: p.text, marginBottom: 8 }}>Тема оформления</div>
               <div style={s.segmentedRow}>
-                <button 
-                  onClick={() => theme !== 'light' && toggleTheme()} 
-                  style={theme === 'light' ? s.segmentedActive : s.segmentedBtn}
-                >
-                  ☀️ Светлая
-                </button>
-                <button 
-                  onClick={() => theme !== 'dark' && toggleTheme()} 
-                  style={theme === 'dark' ? s.segmentedActive : s.segmentedBtn}
-                >
-                  🌙 Тёмная
-                </button>
+                <button onClick={() => theme !== 'light' && toggleTheme()} style={theme === 'light' ? s.segmentedActive : s.segmentedBtn}>☀️ Светлая</button>
+                <button onClick={() => theme !== 'dark' && toggleTheme()} style={theme === 'dark' ? s.segmentedActive : s.segmentedBtn}>🌙 Тёмная</button>
               </div>
             </div>
 
             {/* Имя */}
             <div>
               <div style={{ fontSize: 13, fontWeight: 600, color: p.text, marginBottom: 8 }}>Ваше имя</div>
-              <input 
-                value={name} 
-                onChange={e => setName(e.target.value)} 
-                style={{ ...s.input, marginBottom: 8 }}
-                placeholder="Введите имя"
-              />
-              <button 
-                onClick={saveName} 
-                disabled={saving || name === me?.name}
-                style={{ 
-                  ...s.primaryBtn, 
-                  opacity: (saving || name === me?.name) ? 0.6 : 1,
-                  cursor: (saving || name === me?.name) ? 'not-allowed' : 'pointer',
-                  width: '100%'
-                }}
-              >
+              <input value={name} onChange={e => setName(e.target.value)} style={{ ...s.input, marginBottom: 8 }} placeholder="Введите имя" />
+              <button onClick={saveName} disabled={saving || name === me?.name} style={{ ...s.primaryBtn, opacity: (saving || name === me?.name) ? 0.6 : 1, cursor: (saving || name === me?.name) ? 'not-allowed' : 'pointer', width: '100%' }}>
                 {saving ? 'Сохранение...' : 'Сохранить'}
               </button>
             </div>
 
-            {/* Смена пароля — ссылка на модалку */}
+            {/* Смена пароля */}
             <div>
               <div style={{ fontSize: 13, fontWeight: 600, color: p.text, marginBottom: 8 }}>Безопасность</div>
-              <button 
-                onClick={() => setUi({ showSettings: true })}
-                style={{ ...s.secondaryBtn, width: '100%', justifyContent: 'flex-start' }}
-              >
+              <button onClick={() => setUi({ showPasswordModal: true })} style={{ ...s.secondaryBtn, width: '100%', justifyContent: 'flex-start' }}>
                 🔐 Сменить пароль
               </button>
             </div>
@@ -264,16 +171,12 @@ export function Sidebar() {
             {/* Уведомления */}
             <div>
               <div style={{ fontSize: 13, fontWeight: 600, color: p.text, marginBottom: 8 }}>Уведомления</div>
-              <div style={{ fontSize: 13, color: p.muted, padding: '8px 0' }}>
-                🔔 Push-уведомления активны
-              </div>
+              <div style={{ fontSize: 13, color: p.muted, padding: '8px 0' }}>🔔 Push-уведомления активны</div>
             </div>
 
             {/* Выход */}
             <div style={{ marginTop: 'auto', paddingTop: 16, borderTop: `1px solid ${p.border}` }}>
-              <button onClick={() => reset()} style={{ ...s.dangerBtn, width: '100%' }}>
-                🚪 Выйти из аккаунта
-              </button>
+              <button onClick={() => reset()} style={{ ...s.dangerBtn, width: '100%' }}>🚪 Выйти из аккаунта</button>
             </div>
           </div>
         )}
