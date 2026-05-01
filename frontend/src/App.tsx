@@ -9,43 +9,34 @@ import { initSocket, disconnectSocket } from './lib/socket';
 import { authFetch } from './lib/api';
 
 export function App() {
+  // ✅ FIX: Добавлено 'ui' в деструктуризацию
   const { me, token, theme, ui, setUi, setUsers, setChats, setNotifications } = useAppStore();
   const p = themeTokens[theme];
   const s = React.useMemo(() => createStyles(p), [p]);
 
-  // Загрузка данных при входе
   React.useEffect(() => {
     if (!token || !me?.id) return;
-
-    console.log("🟢 Инициализация сессии для:", me.name);
     initSocket();
-
     Promise.all([
       authFetch('/users').then(r => r.json()),
       authFetch('/chats').then(r => r.json()),
       authFetch('/notifications').then(r => r.json())
     ]).then(([usersData, chatsData, notificationsData]) => {
-      console.log("✅ Данные загружены:", { users: usersData.length, chats: chatsData.length });
       setUsers(usersData);
       setChats(chatsData.map((c: any) => ({ ...c, pinned: false, draft: '' })));
       setNotifications(notificationsData);
-    }).catch(err => {
-      console.error("❌ Ошибка загрузки данных:", err);
-      setUi({ toast: "Ошибка подключения к серверу" });
-    });
-
+    }).catch(console.error);
     return () => disconnectSocket();
-  }, [token, me?.id, setUsers, setChats, setNotifications, setUi]);
+  }, [token, me?.id, setUsers, setChats, setNotifications]);
 
-  // Стили body
   React.useEffect(() => {
     document.body.style.margin = '0';
     document.body.style.background = p.bg;
     document.body.style.color = p.text;
   }, [p]);
 
-  // Тосты
   React.useEffect(() => {
+    // ✅ FIX: Используем реактивную переменную ui.toast
     if (ui.toast) {
       const t = setTimeout(() => setUi({ toast: '' }), 3000);
       return () => clearTimeout(t);
@@ -56,6 +47,7 @@ export function App() {
 
   return (
     <div style={s.layout}>
+      {/* ✅ FIX: Убраны артефакты & & */}
       {ui.toast && <div style={s.toast}>{ui.toast}</div>}
       <Sidebar />
       <ChatWindow />

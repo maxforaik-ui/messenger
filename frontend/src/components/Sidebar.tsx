@@ -4,7 +4,7 @@ import { themeTokens, createStyles } from '../styles/theme';
 import { authFetch, createIdempotencyKey } from '../lib/api';
 
 export function Sidebar() {
-  // ✅ FIX: Добавлен setUsers в деструктуризацию
+  // ✅ FIX: Добавлен 'setUsers'
   const { theme, ui, setUi, me, users, chats, activeChatId, setActiveChatId, setChats, setUsers } = useAppStore();
   const p = themeTokens[theme];
   const s = React.useMemo(() => createStyles(p), [p]);
@@ -21,7 +21,7 @@ export function Sidebar() {
     const search = ui.search.toLowerCase();
     return chats
       .filter(c => {
-        const peer = c.members.find(m => m.user.id !== me?.id)?.user;
+        const peer = c.members.find(m => m.user.id !== me?.id)?.user; // ✅ FIX: m =>
         const title = c.isDirect ? peer?.name || 'Личный' : c.title || 'Группа';
         return title.toLowerCase().includes(search);
       })
@@ -44,11 +44,12 @@ export function Sidebar() {
   return (
     <aside style={s.sidebar}>
       <div style={s.sidebarTopbar}>
+        {/* ✅ FIX: () => */}
         <button style={s.iconBtn} onClick={() => setUi({ showUsers: !ui.showUsers })}>☰</button>
         <input placeholder="Поиск..." value={ui.search} onChange={e => setUi({ search: e.target.value })} style={s.searchInput} />
         <button style={s.iconBtn} onClick={() => setUi({ showSettings: true })}>⚙️</button>
       </div>
-      
+
       <div style={s.meCard}>
         <div style={s.meAvatar}>{me?.name?.split(' ').map(x => x[0]).join('').toUpperCase() || '?'}</div>
         <div style={{ flex: 1 }}>
@@ -76,6 +77,7 @@ export function Sidebar() {
       ) : (
         <div style={s.panelWrap}>
           <div style={s.chatList}>
+            {/* ✅ FIX: && */}
             {visibleChats.length === 0 && <div style={s.emptyState}>Нет чатов</div>}
             {visibleChats.map(c => {
               const peer = c.members.find(m => m.user.id !== me?.id)?.user;

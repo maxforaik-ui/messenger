@@ -236,27 +236,19 @@ app.get('/chats', authMiddleware, async (req: express.Request & { user?: AuthUse
   res.json(withUnread.map((chat) => ({ ...chat, messages: chat.messages.map(formatMessage) })));
 });
 
-app.get('/chats/:chatId/messages', authMiddleware, async (req: express.Request & { user?: AuthUser }, res) => {
+app.get('/chats/:chatId/messages', authMiddleware, async (req, res) => {
   const { chatId } = req.params;
   const member = await ensureChatMembership(req.user!.userId, chatId);
   if (!member) return res.status(403).json({ message: 'Forbidden' });
 
   const limit = Math.min(Number(req.query.limit) || 50, 100);
   const before = req.query.before ? new Date(String(req.query.before)) : undefined;
-
   const where: any = { chatId };
   if (before) where.createdAt = { lt: before };
 
   const messages = await prisma.message.findMany({
-    where,
-    include: {
-      sender: { select: { id: true, name: true, email: true } },
-      reads: { select: { userId: true, readAt: true } },
-      attachments: true,
-      replyTo: { include: { sender: { select: { name: true } } } }
-    },
-    orderBy: { createdAt: 'desc' },
-    take: limit + 1
+    where, include: { sender: { select: { id: true, name: true, email: true } }, reads: { select: { userId: true, readAt: true } }, attachments: true, replyTo: { include: { sender: { select: { name: true } } } } },
+    orderBy: { createdAt: 'desc' }, take: limit + 1
   });
 
   const hasNext = messages.length > limit;
