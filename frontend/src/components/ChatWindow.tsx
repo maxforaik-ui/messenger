@@ -214,6 +214,8 @@ export function ChatWindow() {
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   
   // Состояние контекстного меню
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; message: Message } | null>(null);
@@ -221,25 +223,73 @@ export function ChatWindow() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chat = chats.find(c => c.id === activeChatId);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
 
   const typingLabel = Object.values(typingUsers).some(Boolean) ? 'печатает…' : '';
 
-  // Авто-скролл вниз
+  // Авто-скролл вниз (только для новых сообщений)
   React.useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, pendingFiles]);
+    if (messages.length > 0 && !isLoading) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages.length, pendingFiles]);
 
-  // Загрузка сообщений с пагинацией (первая страница)
+  // Загрузка сообщений с пагинацией
+  const loadMessages = async (beforeId?: string, append = false) => {
+    if (!activeChatId || isLoading || (!hasMore && !append)) return;
+    
+    setIsLoading(true);
+    try {
+      const url = new URL(`/chats/${activeChatId}/messages`, window.location.origin.replace('3000', '4000'));
+      url.searchParams.set('limit', '50');
+      if (beforeId) url.searchParams.set('before', beforeId);
+      
+      const res = await authFetch(url.pathname + url.search);
+      const data = await res.json();
+      const newMessages = Array.isArray(data) ? data : (data.messages || []);
+      
+      if (newMessages.length < 50) {
+        setHasMore(false);
+      }
+      
+      if (append && beforeId) {
+        // Вставляем старые сообщения в начало
+        setMessages(prev => [...newMessages, ...prev.filter(m => !newMessages.find(nm => nm.id === m.id))]);
+        // Сохраняем позицию скролла
+        setTimeout(() => {
+          const el = document.getElementById(`msg-${beforeId}`);
+          if (el) el.scrollIntoView();
+        }, 0);
+      } else {
+        setMessages(newMessages);
+      }
+    } catch (e) {
+      console.error('Load messages error:', e);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Обработчик скролла вверх для пагинации
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const target = e.currentTarget;
+    if (target.scrollTop < 100 && hasMore && !isLoading && messages.length > 0) {
+      const firstMessageId = messages[0].id;
+      loadMessages(firstMessageId, true);
+    }
+  };
+
+  // Initial load
   React.useEffect(() => {
-    if (!activeChatId) { setMessages([]); return; }
+    if (!activeChatId) { 
+      setMessages([]); 
+      setHasMore(true);
+      return; 
+    }
     setMessages([]);
-    // TODO: Добавить пагинацию - загружать только последние 50 сообщений
-    // Сейчас загружаются все сообщения при первом открытии чата
-    authFetch(`/chats/${activeChatId}/messages?limit=50`)
-      .then(r => r.json())
-      .then(data => setMessages(Array.isArray(data) ? data : (data.messages || [])))
-      .catch(console.error);
-  }, [activeChatId, setMessages]);
+    setHasMore(true);
+    loadMessages();
+  }, [activeChatId]);
 
   // Обработчик открытия контекстного меню
   const handleContextMenu = (e: React.MouseEvent, message: Message) => {
@@ -353,8 +403,15 @@ export function ChatWindow() {
       </div>
 
       {/* Messages Area */}
-      <div style={s.messagesArea}>
-        {messages.length === 0 && <div style={s.emptyCanvas}>Нет сообщений. Напишите первым!</div>}
+      <div 
+        ref={messagesContainerRef}
+        style={{ ...s.messagesArea, overflowY: 'auto' }}
+        onScroll={handleScroll}
+      >
+        {isLoading && messages.length > 0 && (
+          <div style={{ textAlign: 'center', padding: 8, color: p.muted, fontSize: 12 }}>Загрузка...</div>
+        )}
+        {messages.length === 0 && !isLoading && <div style={s.emptyCanvas}>Нет сообщений. Напишите первым!</div>}
         {messages.map(m => (
           <MessageBubble
             key={m.id}
