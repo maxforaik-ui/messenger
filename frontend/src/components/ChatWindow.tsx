@@ -184,12 +184,16 @@ export function ChatWindow() {
         
         // Отправляем событие о прочтении для каждого сообщения от других пользователей
         const socket = getSocket();
+        console.log('[ChatWindow] Loaded messages, socket connected:', socket?.connected);
         if (socket) {
           msgs.forEach((msg: Message) => {
             if (msg.sender.id !== me?.id) {
+              console.log('[ChatWindow] Emitting message:read for', msg.id);
               socket.emit('message:read', { messageId: msg.id });
             }
           });
+        } else {
+          console.error('[ChatWindow] Socket not initialized');
         }
       })
       .catch(console.error)
