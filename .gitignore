@@ -1,1 +1,15 @@
-Nothing should be ignored based on the provided file changes. The modification of 'backend/src/main.ts' is a source code file that should not be added to .gitignore.
+```
+# Dependencies
+node_modules/
+
+# Logs and temp files
+*.log
+
+# Environment
+.env
+.env.local
+*.env.*
+
+# Editors
+.vscode/
+```
