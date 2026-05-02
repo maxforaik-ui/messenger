@@ -20,13 +20,21 @@ export function initSocket() {
     console.log('[socket] message:new', msg.id);
     useAppStore.setState((s) => {
       const active = s.activeChatId === msg.chatId;
+      const updatedChats = s.chats.map(c => c.id !== msg.chatId ? c : {
+        ...c,
+        messages: [msg],
+        unreadCount: (c.unreadCount || 0) + (!active && msg.sender.id !== s.me?.id ? 1 : 0)
+      });
+      
+      // ✅ Если чат активный и сообщение не от нас - отмечаем его прочитанным
+      if (active && msg.sender.id !== s.me?.id && socket?.connected) {
+        console.log('[socket] Auto-marking message as read:', msg.id);
+        socket.emit('message:read', { messageId: msg.id });
+      }
+      
       return {
         messages: s.messages.some(m => m.id === msg.id) ? s.messages : [...s.messages, { ...msg, reactions: msg.reactions || {} }],
-        chats: s.chats.map(c => c.id !== msg.chatId ? c : {
-          ...c,
-          messages: [msg],
-          unreadCount: (c.unreadCount || 0) + (!active && msg.sender.id !== s.me?.id ? 1 : 0)
-        })
+        chats: updatedChats
       };
     });
   });
@@ -60,18 +68,40 @@ socket.on('message:read:updated', ({ messageId, userId, readAt, chatId }: {
 }) => {
   console.log('[socket] message:read:updated received', { messageId, userId, chatId });
   
-  useAppStore.setState((s) => ({
-    messages: s.messages.map(m => {
-      // Обновляем только если сообщение принадлежит этому чату (на всякий случай)
+  useAppStore.setState((s) => {
+    // Находим сообщение и проверяем, было ли оно уже отмечено этим пользователем
+    const message = s.messages.find(m => m.id === messageId);
+    const alreadyRead = message?.reads?.some(r => r.userId === userId);
+    
+    if (alreadyRead) {
+      return s; // Ничего не меняем, если уже прочитано
+    }
+    
+    // Обновляем сообщения
+    const updatedMessages = s.messages.map(m => {
       if (m.chatId === chatId && m.id === messageId) {
-        const exists = (m.reads || []).some(r => r.userId === userId);
-        if (exists) return m;
         console.log('[socket] Adding read receipt to message', messageId, 'for user', userId);
         return { ...m, reads: [...(m.reads || []), { userId, readAt }] };
       }
       return m;
-    })
-  }));
+    });
+    
+    // ✅ Уменьшаем счетчик непрочитанных, если сообщение было от другого пользователя
+    const updatedChats = s.chats.map(c => {
+      if (c.id === chatId) {
+        // Проверяем, было ли это сообщение непрочитанным (от другого пользователя)
+        const msg = s.messages.find(m => m.id === messageId);
+        if (msg && msg.sender.id !== s.me?.id) {
+          const newUnread = Math.max(0, (c.unreadCount || 0) - 1);
+          console.log('[socket] Decreasing unreadCount for chat', chatId, 'from', c.unreadCount, 'to', newUnread);
+          return { ...c, unreadCount: newUnread };
+        }
+      }
+      return c;
+    });
+    
+    return { messages: updatedMessages, chats: updatedChats };
+  });
 });
 
 // ✅ FIX: Обработчик обновления статусов пользователей (онлайн/офлайн)
