@@ -438,26 +438,26 @@ app.post('/chats/read', authMiddleware, async (req: express.Request & { user?: A
 
   const now = new Date();
 
-  // 1. Находим сообщения, которые еще НЕ были прочитаны этим пользователем
-  // (Сообщения в этом чате, от других людей, без записи в MessageRead для меня)
+  // 1. Ищем сообщения, которые:
+  // - В этом чате
+  // - Отправлены НЕ текущим пользователем
+  // - ЕЩЁ НЕ прочитаны текущим пользователем (нет записи в MessageRead)
   const unreadMessages = await prisma.message.findMany({
     where: {
       chatId: parsed.data.chatId,
       senderId: { not: req.user!.userId },
+      deletedAt: null,
       reads: {
-        none: {
-          userId: req.user!.userId
-        }
-      },
-      deletedAt: null
+        none: { userId: req.user!.userId }
+      }
     },
-    select: { id: true, senderId: true }
+    select: { id: true }
   });
 
   if (unreadMessages.length > 0) {
-    // 2. Создаем записи в БД (чтобы после F5 статус сохранился)
+    // 2. ✅ КРИТИЧНО: Создаем записи в БД (чтобы после F5 статус сохранялся)
     await prisma.messageRead.createMany({
-        data: unreadMessages.map(msg => ({
+       data: unreadMessages.map(msg => ({
         messageId: msg.id,
         userId: req.user!.userId,
         readAt: now
@@ -465,7 +465,7 @@ app.post('/chats/read', authMiddleware, async (req: express.Request & { user?: A
       skipDuplicates: true
     });
 
-    // 3. ✅ Отправляем событие каждому сообщению в сокет (чтобы галочки посинели в онлайне)
+    // 3. ✅ КРИТИЧНО: Отправляем событие каждому сообщению в сокет (мгновенное обновление)
     for (const msg of unreadMessages) {
       io.to(`chat:${parsed.data.chatId}`).emit('message:read:updated', {
         messageId: msg.id,
@@ -484,6 +484,7 @@ app.post('/chats/read', authMiddleware, async (req: express.Request & { user?: A
 
   res.json({ ok: true, chatId: parsed.data.chatId, lastReadAt: now });
 });
+
 app.get('/search', authMiddleware, async (req: express.Request & { user?: AuthUser }, res) => {
   const parsed = searchSchema.safeParse({ q: String(req.query.q || '') });
   if (!parsed.success) return res.status(400).json(parsed.error.flatten());

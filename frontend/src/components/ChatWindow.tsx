@@ -197,6 +197,16 @@ export function ChatWindow() {
     }).catch(err => console.error('[ChatWindow] Mark read failed:', err));
   }, [activeChatId]);
 
+  useEffect(() => {
+    if (!activeChatId) return;
+    
+    authFetch('/chats/read', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chatId: activeChatId })
+    }).catch(console.error);
+    
+  }, [activeChatId]);
   // Открытие контекстного меню
   const handleContextMenu = (e: React.MouseEvent, message: Message) => {
     e.preventDefault();
