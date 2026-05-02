@@ -86,10 +86,17 @@ function formatMessage(message: any) {
 }
 
 async function markReadForMessage(userId: string, messageId: string) {
+  console.log('[markReadForMessage] called', { userId, messageId });
   const message = await prisma.message.findUnique({ where: { id: messageId } });
-  if (!message) return null;
+  if (!message) {
+    console.log('[markReadForMessage] message not found', messageId);
+    return null;
+  }
   const member = await ensureChatMembership(userId, message.chatId);
-  if (!member) return null;
+  if (!member) {
+    console.log('[markReadForMessage] not a member of chat', message.chatId);
+    return null;
+  }
   const now = new Date();
   const read = await prisma.messageRead.upsert({
     where: { messageId_userId: { messageId, userId } },
@@ -100,6 +107,7 @@ async function markReadForMessage(userId: string, messageId: string) {
     where: { userId_chatId: { userId, chatId: message.chatId } },
     data: { lastReadAt: now }
   });
+  console.log('[markReadForMessage] emitting message:read:updated', { messageId, userId, chatId: message.chatId });
   io.to(`chat:${message.chatId}`).emit('message:read:updated', { messageId, userId, readAt: read.readAt, chatId: message.chatId });
   return read;
 }
@@ -755,7 +763,9 @@ io.on('connection', async (socket) => {
   });
   
   socket.on('message:read', async ({ messageId }: { messageId: string }) => {
-    await markReadForMessage(user.userId, messageId);
+    console.log('[backend] message:read event received', { userId: user.userId, messageId });
+    const result = await markReadForMessage(user.userId, messageId);
+    console.log('[backend] markReadForMessage result', { messageId, result });
   });
   
   socket.on('disconnect', async () => {
