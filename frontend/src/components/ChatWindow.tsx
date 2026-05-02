@@ -185,6 +185,18 @@ export function ChatWindow() {
       .finally(() => setIsLoading(false));
   }, [activeChatId, setMessages]);
 
+// ✅ Автоматически отмечаем чат прочитанным при открытии
+  useEffect(() => {
+    if (!activeChatId) return;
+    
+    console.log('[ChatWindow] Requesting read receipt for:', activeChatId);
+    authFetch('/chats/read', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chatId: activeChatId })
+    }).catch(err => console.error('[ChatWindow] Mark read failed:', err));
+  }, [activeChatId]);
+
   // Открытие контекстного меню
   const handleContextMenu = (e: React.MouseEvent, message: Message) => {
     e.preventDefault();
@@ -255,9 +267,27 @@ export function ChatWindow() {
 
   // Статусы прочтения
   const getReadStatus = (msg: Message) => {
-    if (!msg.reads || msg.reads.length === 0) return 'sent';
-    const othersRead = msg.reads.filter(r => r.userId !== me?.id).length;
-    return othersRead > 0 ? 'read' : 'delivered';
+    console.log('[ChatWindow] getReadStatus', {
+      id: msg.id,
+      reads: msg.reads,
+      me: me?.id
+    });
+    
+    if (!msg.reads || msg.reads.length === 0) {
+      console.log('[ChatWindow] No reads - sent');
+      return 'sent';
+    }
+    
+    const othersRead = msg.reads.filter(r => {
+      const isOther = r.userId !== me?.id;
+      console.log(`[ChatWindow] Read by ${r.userId}, isOther: ${isOther}`);
+      return isOther;
+    }).length;
+    
+    const status = othersRead > 0 ? 'read' : 'delivered';
+    console.log(`[ChatWindow] Status: ${status}, othersRead: ${othersRead}`);
+    
+    return status;
   };
 
   if (!chat) return (
