@@ -58,8 +58,7 @@ export function initSocket() {
 socket.on('message:read:updated', ({ messageId, userId, readAt, chatId }: { 
   messageId: string; userId: string; readAt: string; chatId: string 
 }) => {
-  // ❌ УДАЛИ ЭТУ СТРОКУ, чтобы статус обновлялся даже если ты в другом чате
-  // if (chatId !== useAppStore.getState().activeChatId) return; 
+  console.log('[socket] message:read:updated received', { messageId, userId, chatId });
   
   useAppStore.setState((s) => ({
     messages: s.messages.map(m => {
@@ -67,6 +66,7 @@ socket.on('message:read:updated', ({ messageId, userId, readAt, chatId }: {
       if (m.chatId === chatId && m.id === messageId) {
         const exists = (m.reads || []).some(r => r.userId === userId);
         if (exists) return m;
+        console.log('[socket] Adding read receipt to message', messageId, 'for user', userId);
         return { ...m, reads: [...(m.reads || []), { userId, readAt }] };
       }
       return m;
