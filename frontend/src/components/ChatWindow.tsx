@@ -162,6 +162,7 @@ export function ChatWindow() {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; message: Message } | null>(null);
+  const [isAtBottom, setIsAtBottom] = useState(true);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chat = chats.find(c => c.id === activeChatId);
@@ -169,6 +170,21 @@ export function ChatWindow() {
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const typingLabel = Object.values(typingUsers).some(Boolean) ? 'печатает…' : '';
+
+  // Отслеживаем позицию скролла
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      const isNearBottom = scrollHeight - scrollTop - clientHeight < 100;
+      setIsAtBottom(isNearBottom);
+    };
+
+    container.addEventListener('scroll', handleScroll);
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, []);
 
   // Отправка события о наборе текста
   useEffect(() => {
@@ -205,14 +221,14 @@ export function ChatWindow() {
     };
   }, [activeChatId]);
 
-  // Авто-скролл вниз
+  // Авто-скролл вниз только если пользователь внизу
   useEffect(() => {
-    if (messages.length > 0 && !isLoading) {
+    if (messages.length > 0 && !isLoading && isAtBottom) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [messages.length, pendingFiles]);
+  }, [messages.length, pendingFiles, isAtBottom, isLoading]);
 
-  // Загрузка сообщений
+  // Загрузка сообщений (последние первыми)
   useEffect(() => {
     if (!activeChatId) { setMessages([]); return; }
     
@@ -228,6 +244,7 @@ export function ChatWindow() {
       .then(r => r.json())
       .then(data => {
         const msgs = Array.isArray(data) ? data : (data.messages || []);
+        // Сообщения уже приходят в правильном порядке (новые последние) с бэкенда
         setMessages(msgs);
         
         // Отправляем событие о прочтении для каждого сообщения от других пользователей
@@ -242,6 +259,13 @@ export function ChatWindow() {
         } else {
           console.error('[ChatWindow] Socket not initialized');
         }
+        
+        // После загрузки прокручиваем вниз только если это первый вход в чат
+        setTimeout(() => {
+          if (messagesContainerRef.current) {
+            messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+          }
+        }, 100);
       })
       .catch(console.error)
       .finally(() => setIsLoading(false));
