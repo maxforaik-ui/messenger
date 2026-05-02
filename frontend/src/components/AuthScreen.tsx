@@ -1,42 +1,36 @@
 import React from 'react';
 import { useAppStore } from '../store/useAppStore';
-import { trpc } from '../lib/trpc';
+import { authFetch } from '../lib/api';
 import { themeTokens, createStyles } from '../styles/theme';
 
 export function AuthScreen() {
-  const { me, token, theme } = useAppStore();
+  const { me, token, theme, setMe, setToken } = useAppStore();
   const p = themeTokens[theme];
   const s = React.useMemo(() => createStyles(p), [p]);
   const [mode, setMode] = React.useState<'login' | 'register'>('register');
   const [form, setForm] = React.useState({ email: '', name: '', password: '' });
   const [error, setError] = React.useState('');
-
-  const registerMutation = trpc.auth.register.useMutation({
-    onSuccess: (data) => {
-      useAppStore.setState({ token: data.token, me: data.user });
-    },
-    onError: (err) => {
-      setError(err.message);
-    }
-  });
-
-  const loginMutation = trpc.auth.login.useMutation({
-    onSuccess: (data) => {
-      useAppStore.setState({ token: data.token, me: data.user });
-    },
-    onError: (err) => {
-      setError(err.message);
-    }
-  });
+  const [loading, setLoading] = React.useState(false);
 
   if (me && token) return null;
 
   const submit = async () => {
     setError('');
-    if (mode === 'register') {
-      registerMutation.mutate({ email: form.email, name: form.name, password: form.password });
-    } else {
-      loginMutation.mutate({ email: form.email, password: form.password });
+    setLoading(true);
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/auth/${mode}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Error');
+      setToken(data.token);
+      setMe(data.user);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
     }
   };
 

@@ -1,6 +1,6 @@
 import React from 'react';
 import { useAppStore } from '../store/useAppStore';
-import { trpc, useSendMessage } from '../lib/trpc';
+import { authFetch } from '../lib/api';
 import { themeTokens, createStyles } from '../styles/theme';
 
 // Компонент индикатора статуса с эмодзи
@@ -32,40 +32,74 @@ export function Sidebar() {
   const [name, setName] = React.useState(me?.name || '');
   const [saving, setSaving] = React.useState(false);
   const [activeTab, setActiveTab] = React.useState<'chats' | 'users' | 'settings'>('chats');
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
-  const { data: usersData } = trpc.users.list.useQuery(undefined, { enabled: !!me?.id });
+  // Загрузка пользователей
   React.useEffect(() => {
-    if (usersData) setUsers(usersData);
-  }, [usersData, setUsers]);
+    if (!me?.id) return;
+    const loadUsers = async () => {
+      try {
+        const res = await fetch(`${API_URL}/users`, {
+          headers: { Authorization: `Bearer ${useAppStore.getState().token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setUsers(data);
+        }
+      } catch (err) {
+        console.error('Failed to load users:', err);
+      }
+    };
+    loadUsers();
+  }, [me?.id, setUsers]);
 
-  const createDirectMutation = trpc.chats.createDirect.useMutation({
-    onSuccess: (chat) => {
-      setChats(prev => prev.some(c => c.id === chat.id) ? prev : [{ ...chat, pinned: false, draft: '' }, ...prev]);
-      setActiveChatId(chat.id);
-      setActiveTab('chats');
-    }
-  });
-
+  // Создание прямого чата
   const createDirect = async (id: string) => {
-    createDirectMutation.mutate({ peerUserId: id });
+    try {
+      const res = await fetch(`${API_URL}/chats/direct`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${useAppStore.getState().token}`
+        },
+        body: JSON.stringify({ peerUserId: id })
+      });
+      if (res.ok) {
+        const chat = await res.json();
+        setChats(prev => prev.some(c => c.id === chat.id) ? prev : [{ ...chat, pinned: false, draft: '' }, ...prev]);
+        setActiveChatId(chat.id);
+        setActiveTab('chats');
+      }
+    } catch (err) {
+      console.error('Failed to create direct chat:', err);
+    }
   };
 
-  const updateMeMutation = trpc.users.updateMe.useMutation({
-    onSuccess: (updated) => {
-      setMe(updated);
-      setUi({ toast: 'Имя обновлено' });
-      setSaving(false);
-    },
-    onError: (err) => {
-      setUi({ toast: err.message });
-      setSaving(false);
-    }
-  });
-
+  // Обновление имени
   const saveName = async () => {
     if (!name.trim() || name === me?.name) return;
     setSaving(true);
-    updateMeMutation.mutate({ name });
+    try {
+      const res = await fetch(`${API_URL}/users/me`, {
+        method: 'PUT',
+        headers: { 
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${useAppStore.getState().token}`
+        },
+        body: JSON.stringify({ name })
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setMe(updated);
+        setUi({ toast: 'Имя обновлено' });
+      } else {
+        setUi({ toast: 'Ошибка обновления имени' });
+      }
+    } catch (err) {
+      setUi({ toast: 'Ошибка обновления имени' });
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (

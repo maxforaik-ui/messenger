@@ -13,7 +13,6 @@ import { Server } from 'socket.io';
 import { z } from 'zod';
 import jwt from 'jsonwebtoken';
 import rateLimit from 'express-rate-limit';
-import { createExpressMiddleware } from '@trpc/server/adapters/express';
 import { prisma } from './db.js';
 import { authMiddleware, comparePassword, hashPassword, signToken, type AuthUser } from './auth.js';
 import { connectPresenceRedis, connectStreamsRedis } from './redis.js';
@@ -116,27 +115,6 @@ async function markReadForMessage(userId: string, messageId: string) {
 }
 
 app.get('/health', (_req, res) => res.json({ ok: true }));
-
-// === tRPC Router ===
-app.use('/trpc', createExpressMiddleware({
-  router: appRouter,
-  createContext: async ({ req }) => {
-    const authHeader = req.headers.authorization;
-    const token = authHeader?.replace('Bearer ', '');
-    let user: AuthUser | null = null;
-    
-    if (token) {
-      try {
-        const jwtSecret = process.env.JWT_SECRET || 'change_me';
-        user = jwt.verify(token, jwtSecret) as AuthUser;
-      } catch {
-        // Token invalid, user remains null
-      }
-    }
-    
-    return createTrpcContext(user);
-  }
-}));
 
 app.post('/auth/register', async (req, res) => {
   const parsed = registerSchema.safeParse(req.body);
