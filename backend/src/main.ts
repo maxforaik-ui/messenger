@@ -18,8 +18,6 @@ import { prisma } from './db.js';
 import { authMiddleware, comparePassword, hashPassword, signToken, type AuthUser } from './auth.js';
 import { connectPresenceRedis, connectStreamsRedis } from './redis.js';
 import { subscribeUser, unsubscribeUser, sendPushNotification } from './push.js';
-import { createTrpcContext } from './trpc/context.js';
-import { appRouter } from './trpc/router.js';
 
 const app = express();
 app.use(cors({ origin: process.env.CLIENT_ORIGIN, credentials: true }));
