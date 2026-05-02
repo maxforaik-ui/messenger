@@ -325,7 +325,19 @@ export function ChatWindow() {
       <div style={s.chatHeader}>
         <div style={s.avatar}>{chat.isDirect ? chat.members.find(m => m.user.id !== me?.id)?.user.name?.[0]?.toUpperCase() : chat.title?.[0]?.toUpperCase() || '?'}</div>
         <div style={{ flex: 1 }}>
-          <div style={s.chatHeaderTitle}>{chat.isDirect ? chat.members.find(m => m.user.id !== me?.id)?.user.name : chat.title}</div>
+          <div style={s.chatHeaderTitle}>
+            {chat.isDirect ? chat.members.find(m => m.user.id !== me?.id)?.user.name : chat.title}
+            {chat.isDirect && (() => {
+              const peerUser = chat.members.find(m => m.user.id !== me?.id)?.user;
+              const isOnline = (peerUser as any)?.online;
+              const lastSeen = (peerUser as any)?.lastSeenAt;
+              return (
+                <span style={{ marginLeft: 8, fontSize: 12, color: isOnline ? '#22c55e' : p.muted }}>
+                  {isOnline ? '🟢 Онлайн' : lastSeen ? `Был(а) ${new Date(lastSeen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
+                </span>
+              );
+            })()}
+          </div>
           <div style={s.chatHeaderMeta}>{typingLabel}</div>
         </div>
       </div>

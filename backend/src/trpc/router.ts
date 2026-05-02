@@ -71,7 +71,8 @@ export const appRouter = t.router({
         select: { id: true, email: true, name: true, createdAt: true },
         orderBy: { createdAt: 'desc' }
       });
-      return users.map((u: any) => ({ ...u, online: false }));
+      // Добавляем статусы онлайн из presenceCounts (будет обновляться через WebSocket)
+      return users.map((u: any) => ({ ...u, online: false, lastSeenAt: null }));
     }),
 
     updateMe: protectedProcedure

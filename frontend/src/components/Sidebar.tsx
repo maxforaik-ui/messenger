@@ -3,13 +3,27 @@ import { useAppStore } from '../store/useAppStore';
 import { trpc, useSendMessage } from '../lib/trpc';
 import { themeTokens, createStyles } from '../styles/theme';
 
-// Компонент индикатора статуса
-const StatusDot = ({ online }: { online?: boolean }) => (
-  <span style={{
-    display: 'inline-block', width: 8, height: 8, borderRadius: '50%',
-    background: online ? '#22c55e' : '#9ca3af', marginRight: 6, flexShrink: 0
-  }} />
-);
+// Компонент индикатора статуса с эмодзи
+const StatusDot = ({ online, lastSeenAt }: { online?: boolean; lastSeenAt?: string }) => {
+  if (online) return <span style={{ marginRight: 6, flexShrink: 0 }}>🟢</span>;
+  if (lastSeenAt) {
+    const date = new Date(lastSeenAt);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+    
+    let timeAgo;
+    if (diffMins < 1) timeAgo = 'только что';
+    else if (diffMins < 60) timeAgo = `${diffMins} мин назад`;
+    else if (diffHours < 24) timeAgo = `${diffHours} ч назад`;
+    else timeAgo = `${diffDays} дн назад`;
+    
+    return <span style={{ marginRight: 6, flexShrink: 0, fontSize: 12 }}>⚫️ {timeAgo}</span>;
+  }
+  return <span style={{ marginRight: 6, flexShrink: 0 }}>⚪️</span>;
+};
 
 export function Sidebar() {
   const { theme, ui, setUi, me, users, chats, activeChatId, setActiveChatId, setChats, setUsers, toggleTheme, setMe, reset } = useAppStore();
@@ -98,11 +112,15 @@ export function Sidebar() {
                     <div style={{ flex: 1, textAlign: 'left' }}>
                       <div style={s.chatTopLine}>
                         <span style={s.chatName}>
-                          {c.isDirect && <StatusDot online={peer?.online} />}
+                          {c.isDirect && <StatusDot online={peer?.online} lastSeenAt={(peer as any)?.lastSeenAt} />}
                           {title}
                         </span>
                       </div>
-                      <div style={s.chatSubline}>{c.isDirect ? (peer?.online ? 'online' : 'offline') : `${c.members.length} участников`}</div>
+                      <div style={s.chatSubline}>
+                        {c.isDirect 
+                          ? (peer?.online ? 'Онлайн' : (peer as any)?.lastSeenAt ? `Был(а) ${new Date((peer as any).lastSeenAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Офлайн')
+                          : `${c.members.length} участников`}
+                      </div>
                     </div>
                     {!!c.unreadCount && <span style={s.unreadBadge}>{c.unreadCount}</span>}
                   </button>
@@ -119,7 +137,7 @@ export function Sidebar() {
                 <div style={s.avatarSmall}>{u.name?.[0]?.toUpperCase() || '?'}</div>
                 <div style={{ flex: 1, textAlign: 'left' }}>
                   <div style={s.userName}>
-                    <StatusDot online={u.online} />
+                    <StatusDot online={u.online} lastSeenAt={(u as any).lastSeenAt} />
                     {u.name}
                   </div>
                   <div style={s.userMeta}>{u.email}</div>

@@ -58,7 +58,9 @@ function updatePresence(userId: string, delta: 1 | -1) {
   presenceCounts.set(userId, next);
   const now = new Date().toISOString();
   if (next === 0) lastSeenMap.set(userId, now);
-  io.emit('presence:update', { userId, online: next > 0, lastSeenAt: lastSeenMap.get(userId) || now });
+  const isOnline = next > 0;
+  console.log('[presence:update]', { userId, online: isOnline, connections: next });
+  io.emit('presence:update', { userId, online: isOnline, lastSeenAt: lastSeenMap.get(userId) || now });
 }
 
 // === Schemas ===
@@ -736,6 +738,10 @@ io.use((socket, next) => {
 io.on('connection', async (socket) => {
   const user = socket.data.user as AuthUser;
   const deviceId = socket.data.deviceId as string;
+  
+  // При первом подключении увеличиваем счетчик и отправляем событие онлайн
+  updatePresence(user.userId, 1);
+  
   const hb = setInterval(() => updatePresence(user.userId, 0), 15000);
   socketHeartbeatTimers.set(socket.id, hb);
   const memberships = await prisma.chatMember.findMany({ where: { userId: user.userId } });
