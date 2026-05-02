@@ -1,31 +1,47 @@
 ```
-# NPM cache
-tmp/npm-cache/
-
-# Logs
+# Logs and temp files
 *.log
-
-# Temporary files
 *.tmp
+*.swp
 
-# Environment files
+# Environment
 .env
 .env.local
 *.env.*
 
-# Editor/IDE files
+# Editors
 .vscode/
 .idea/
-*.swp
-*.swo
+
+# Dependencies
+node_modules/
+venv/
+.venv/
+__pycache__/
+.mypy_cache/
+.pytest_cache/
+dist/
+build/
+target/
+.gradle/
+
+# Compiled files
+*.pyc
+*.class
+*.o
+*.exe
+*.dll
+*.so
+*.a
+*.obj
+*.out
 
 # System files
 .DS_Store
 Thumbs.db
-
-backend/node_modules/
-frontend/node_modules/
-frontend/dev-dist/
+coverage/
+htmlcov/
+.coverage
 
 # Compressed files
 *.zip
@@ -46,13 +62,4 @@ frontend/dev-dist/
 *.Z
 *.lz
 *.lzo
-*.tar.gz
-*.tar.bz2
-*.tar.xz
-*.tar.zst
-
 ```
-command.txt
-push.ps1
-backend/scripts/generate-vapid-keys.js
-frontend/package-lock.json

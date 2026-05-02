@@ -1,6 +1,3 @@
-process.on('unhandledRejection', (reason) => console.error('[unhandledRejection]', reason));
-process.on('uncaughtException', (error) => console.error('[uncaughtException]', error));
-
 import 'dotenv/config';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -17,6 +14,9 @@ import { prisma } from './db.js';
 import { authMiddleware, comparePassword, hashPassword, signToken, type AuthUser } from './auth.js';
 import { connectPresenceRedis, connectStreamsRedis } from './redis.js';
 import { subscribeUser, unsubscribeUser, sendPushNotification } from './push.js';
+
+process.on('unhandledRejection', (reason) => console.error('[unhandledRejection]', reason));
+process.on('uncaughtException', (error) => console.error('[uncaughtException]', error));
 
 const app = express();
 app.use(cors({ origin: process.env.CLIENT_ORIGIN, credentials: true }));
@@ -457,7 +457,7 @@ app.post('/chats/read', authMiddleware, async (req: express.Request & { user?: A
   if (unreadMessages.length > 0) {
     // 2. Создаем записи в БД (чтобы после F5 статус сохранился)
     await prisma.messageRead.createMany({
-       unreadMessages.map(msg => ({
+      data: unreadMessages.map(msg => ({
         messageId: msg.id,
         userId: req.user!.userId,
         readAt: now
