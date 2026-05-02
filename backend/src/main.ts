@@ -83,7 +83,9 @@ function formatMessage(message: any) {
     ...message,
     body: message.deletedAt ? '[deleted]' : message.body,
     replyTo: message.replyTo ? { id: message.replyTo.id, body: message.replyTo.deletedAt ? '[deleted]' : message.replyTo.body, senderName: message.replyTo.sender?.name || 'Unknown' } : null,
-    reactions: message.reactions || {}
+    reactions: message.reactions || {},
+    forwardedFrom: message.forwardedFrom ? { id: message.forwardedFrom.id, senderName: message.forwardedFrom.sender?.name || 'Unknown', originalChatId: message.chatId } : null,
+    voiceNote: message.voiceNote || null
   };
 }
 
@@ -694,6 +696,144 @@ app.delete('/me', authMiddleware, async (req: express.Request & { user?: AuthUse
     console.error('DELETE /me error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
+});
+
+// === Архивация чатов ===
+app.post('/chats/:chatId/archive', authMiddleware, async (req: express.Request & { user?: AuthUser }, res) => {
+  const member = await ensureChatMembership(req.user!.userId, req.params.chatId);
+  if (!member) return res.status(403).json({ message: 'Forbidden' });
+  const chat = await prisma.chat.update({
+    where: { id: req.params.chatId },
+    data: { archived: true }
+  });
+  io.to(`chat:${req.params.chatId}`).emit('chat:archived', { chatId: req.params.chatId });
+  res.json(chat);
+});
+
+app.post('/chats/:chatId/unarchive', authMiddleware, async (req: express.Request & { user?: AuthUser }, res) => {
+  const member = await ensureChatMembership(req.user!.userId, req.params.chatId);
+  if (!member) return res.status(403).json({ message: 'Forbidden' });
+  const chat = await prisma.chat.update({
+    where: { id: req.params.chatId },
+    data: { archived: false }
+  });
+  io.to(`chat:${req.params.chatId}`).emit('chat:unarchived', { chatId: req.params.chatId });
+  res.json(chat);
+});
+
+app.get('/chats/archived', authMiddleware, async (req: express.Request & { user?: AuthUser }, res) => {
+  const userId = req.user!.userId;
+  const chats = await prisma.chat.findMany({
+    where: { members: { some: { userId } }, archived: true, deletedAt: null },
+    include: {
+      members: { include: { user: { select: { id: true, name: true, email: true } } } },
+      messages: { orderBy: { createdAt: 'desc' }, take: 1, include: { attachments: true } }
+    }
+  });
+  res.json(chats);
+});
+
+// === Пересылка сообщений ===
+app.post('/messages/:messageId/forward', authMiddleware, async (req: express.Request & { user?: AuthUser }, res) => {
+  const { targetChatId } = req.body;
+  if (!targetChatId) return res.status(400).json({ message: 'targetChatId required' });
+  
+  const message = await prisma.message.findUnique({ where: { id: req.params.messageId } });
+  if (!message) return res.status(404).json({ message: 'Message not found' });
+  
+  const sourceMember = await ensureChatMembership(req.user!.userId, message.chatId);
+  const targetMember = await ensureChatMembership(req.user!.userId, targetChatId);
+  if (!sourceMember || !targetMember) return res.status(403).json({ message: 'Forbidden' });
+  
+  const forwarded = await prisma.message.create({
+    data: {
+      chatId: targetChatId,
+      senderId: req.user!.userId,
+      body: message.body,
+      forwardedFromId: message.id,
+      replyToMessageId: req.body.replyToMessageId
+    },
+    include: {
+      sender: { select: { id: true, name: true, email: true } },
+      reads: true,
+      attachments: { include: {} },
+      forwardedFrom: { include: { sender: { select: { name: true } } } }
+    }
+  });
+  
+  const formatted = formatMessage(forwarded);
+  io.to(`chat:${targetChatId}`).emit('message:new', formatted);
+  res.json(formatted);
+});
+
+// === Голосовые сообщения ===
+app.post('/messages/voice', authMiddleware, upload.single('audio'), async (req: express.Request & { user?: AuthUser, file?: Express.Multer.File }, res) => {
+  const { chatId, duration } = req.body;
+  const file = req.file;
+  if (!file || !chatId || !duration) return res.status(400).json({ message: 'audio, chatId and duration required' });
+  
+  const member = await ensureChatMembership(req.user!.userId, chatId);
+  if (!member) return res.status(403).json({ message: 'Forbidden' });
+  
+  const url = `${req.protocol}://${req.get('host')}/uploads/${path.basename(file.path)}`;
+  
+  const message = await prisma.message.create({
+    data: { chatId, senderId: req.user!.userId, body: '' },
+    include: { sender: { select: { id: true, name: true, email: true } }, reads: true }
+  });
+  
+  const voiceNote = await prisma.voiceNote.create({
+    data: {
+      messageId: message.id,
+      duration: parseInt(duration),
+      url,
+      storagePath: file.path,
+      sizeBytes: file.size
+    }
+  });
+  
+  const formatted = { ...formatMessage(message), voiceNote };
+  io.to(`chat:${chatId}`).emit('message:new', formatted);
+  res.json(formatted);
+});
+
+// === Оффлайн очередь сообщений ===
+app.post('/offline-messages', authMiddleware, async (req: express.Request & { user?: AuthUser }, res) => {
+  const { chatId, body } = req.body;
+  if (!chatId || !body) return res.status(400).json({ message: 'chatId and body required' });
+  
+  const member = await ensureChatMembership(req.user!.userId, chatId);
+  if (!member) return res.status(403).json({ message: 'Forbidden' });
+  
+  const queued = await prisma.offlineMessageQueue.create({
+    data: { userId: req.user!.userId, chatId, body }
+  });
+  
+  res.json(queued);
+});
+
+app.get('/offline-messages', authMiddleware, async (req: express.Request & { user?: AuthUser }, res) => {
+  const messages = await prisma.offlineMessageQueue.findMany({
+    where: { userId: req.user!.userId, sent: false },
+    orderBy: { createdAt: 'asc' }
+  });
+  res.json(messages);
+});
+
+app.post('/offline-messages/:id/send', authMiddleware, async (req: express.Request & { user?: AuthUser }, res) => {
+  const queued = await prisma.offlineMessageQueue.findUnique({ where: { id: req.params.id } });
+  if (!queued || queued.userId !== req.user!.userId) return res.status(404).json({ message: 'Not found' });
+  
+  const message = await prisma.message.create({
+    data: { chatId: queued.chatId, senderId: req.user!.userId, body: queued.body },
+    include: { sender: { select: { id: true, name: true, email: true } }, reads: true }
+  });
+  
+  await prisma.offlineMessageQueue.update({ where: { id: req.params.id }, data: { sent: true } });
+  
+  const formatted = formatMessage(message);
+  io.to(`chat:${queued.chatId}`).emit('message:new', formatted);
+  res.json(formatted);
 });
 
 // === Socket.IO Setup ===

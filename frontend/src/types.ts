@@ -18,6 +18,7 @@ export type Chat = {
   unreadCount?: number;
   members: { user: User }[]; 
   pinned?: boolean; 
+  archived?: boolean;
   draft?: string;
   deletedAt?: Date | null;
   lastMessage?: Message | null;
@@ -47,6 +48,8 @@ export type Message = {
   replyTo?: { id: string; body?: string; senderName?: string } | null;
   reactions?: Record<string, number>;
   deletedAt?: Date | null;
+  forwardedFrom?: { id: string; senderName?: string; originalChatId?: string } | null;
+  voiceNote?: { duration: number; url: string } | null;
 };
 
 export type PushSubscriptionData = {

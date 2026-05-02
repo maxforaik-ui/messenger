@@ -8,10 +8,10 @@ import Picker from '@emoji-mart/react';
 
 // --- Компонент Контекстного Меню (ПКМ) ---
 function MessageContextMenu({
-  x, y, message, isMine, onClose, onReply, onEdit, onDelete, onReaction
+  x, y, message, isMine, onClose, onReply, onEdit, onDelete, onReaction, onForward
 }: {
   x: number; y: number; message: Message; isMine: boolean;
-  onClose: () => void; onReply: () => void; onEdit: () => void; onDelete: () => void; onReaction: (emoji: string) => void;
+  onClose: () => void; onReply: () => void; onEdit: () => void; onDelete: () => void; onReaction: (emoji: string) => void; onForward: () => void;
 }) {
   const { theme } = useAppStore();
   const p = themeTokens[theme];
@@ -46,6 +46,10 @@ function MessageContextMenu({
         ))}
       </div>
       <div style={{ padding: '4px 0' }}>
+        <button onClick={() => { onForward(); onClose(); }}
+          style={{ width: '100%', padding: '10px 16px', textAlign: 'left', border: 'none', background: 'transparent', color: p.text, cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+          ➡️ Переслать
+        </button>
         <button onClick={() => { onReply(); onClose(); }}
           style={{ width: '100%', padding: '10px 16px', textAlign: 'left', border: 'none', background: 'transparent', color: p.text, cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
           ↩️ Ответить
@@ -163,7 +167,43 @@ export function ChatWindow() {
   const chat = chats.find(c => c.id === activeChatId);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const typingLabel = Object.values(typingUsers).some(Boolean) ? 'печатает…' : '';
+
+  // Отправка события о наборе текста
+  useEffect(() => {
+    if (!activeChatId || !draft) return;
+    
+    const socket = getSocket();
+    if (!socket?.connected) return;
+    
+    // Отправляем событие начала набора
+    socket.emit('typing:start', { chatId: activeChatId });
+    
+    // Очищаем предыдущий таймер
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    
+    // Устанавливаем таймер остановки набора через 2 секунды
+    typingTimeoutRef.current = setTimeout(() => {
+      socket.emit('typing:stop', { chatId: activeChatId });
+      typingTimeoutRef.current = null;
+    }, 2000);
+    
+    return () => {
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    };
+  }, [draft, activeChatId]);
+
+  // Остановка набора при потере фокуса или смене чата
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket?.connected || !activeChatId) return;
+    
+    return () => {
+      socket.emit('typing:stop', { chatId: activeChatId });
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    };
+  }, [activeChatId]);
 
   // Авто-скролл вниз
   useEffect(() => {
@@ -463,6 +503,7 @@ export function ChatWindow() {
           onEdit={() => { setDraft(contextMenu.message.body || ''); setEditingMessage(contextMenu.message); setReplyTo(null); }} 
           onDelete={() => handleDelete(contextMenu.message.id)} 
           onReaction={(emoji) => handleReaction(contextMenu.message.id, emoji)} 
+          onForward={() => { /* TODO: forward logic */ }} 
         />
       )}
     </main>
