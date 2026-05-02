@@ -1,7 +1,7 @@
 import React from 'react';
 import { useAppStore } from '../store/useAppStore';
+import { trpc, useSendMessage } from '../lib/trpc';
 import { themeTokens, createStyles } from '../styles/theme';
-import { authFetch, createIdempotencyKey } from '../lib/api';
 
 // Компонент индикатора статуса
 const StatusDot = ({ online }: { online?: boolean }) => (
@@ -19,49 +19,39 @@ export function Sidebar() {
   const [saving, setSaving] = React.useState(false);
   const [activeTab, setActiveTab] = React.useState<'chats' | 'users' | 'settings'>('chats');
 
+  const { data: usersData } = trpc.users.list.useQuery(undefined, { enabled: !!me?.id });
   React.useEffect(() => {
-    if (!me?.id) return;
-    authFetch('/users').then(r => r.json()).then(data => setUsers(data)).catch(console.error);
-  }, [me?.id, setUsers]);
+    if (usersData) setUsers(usersData);
+  }, [usersData, setUsers]);
 
-  const visibleChats = React.useMemo(() => {
-    const search = ui.search.toLowerCase();
-    return chats.filter(c => {
-      const peer = c.members.find(m => m.user.id !== me?.id)?.user;
-      const title = c.isDirect ? peer?.name || 'Личный' : c.title || 'Группа';
-      return title.toLowerCase().includes(search);
-    }).sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned));
-  }, [chats, ui.search, me?.id]);
+  const createDirectMutation = trpc.chats.createDirect.useMutation({
+    onSuccess: (chat) => {
+      setChats(prev => prev.some(c => c.id === chat.id) ? prev : [{ ...chat, pinned: false, draft: '' }, ...prev]);
+      setActiveChatId(chat.id);
+      setActiveTab('chats');
+    }
+  });
 
   const createDirect = async (id: string) => {
-    const idem = createIdempotencyKey();
-    const res = await authFetch('/chats/direct', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ peerUserId: id })
-    });
-    const chat = await res.json();
-    setChats(prev => prev.some(c => c.id === chat.id) ? prev : [{ ...chat, pinned: false, draft: '' }, ...prev]);
-    setActiveChatId(chat.id);
-    setActiveTab('chats');
+    createDirectMutation.mutate({ peerUserId: id });
   };
+
+  const updateMeMutation = trpc.users.updateMe.useMutation({
+    onSuccess: (updated) => {
+      setMe(updated);
+      setUi({ toast: 'Имя обновлено' });
+      setSaving(false);
+    },
+    onError: (err) => {
+      setUi({ toast: err.message });
+      setSaving(false);
+    }
+  });
 
   const saveName = async () => {
     if (!name.trim() || name === me?.name) return;
     setSaving(true);
-    try {
-      const res = await authFetch('/me', {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name })
-      });
-      if (!res.ok) throw new Error('Ошибка сохранения');
-      const updated = await res.json();
-      setMe(updated);
-      setUi({ toast: 'Имя обновлено' });
-    } catch (e: any) {
-      setUi({ toast: e.message });
-    } finally {
-      setSaving(false);
-    }
+    updateMeMutation.mutate({ name });
   };
 
   return (

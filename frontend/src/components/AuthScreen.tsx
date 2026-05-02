@@ -1,5 +1,6 @@
 import React from 'react';
 import { useAppStore } from '../store/useAppStore';
+import { trpc } from '../lib/trpc';
 import { themeTokens, createStyles } from '../styles/theme';
 
 export function AuthScreen() {
@@ -10,19 +11,33 @@ export function AuthScreen() {
   const [form, setForm] = React.useState({ email: '', name: '', password: '' });
   const [error, setError] = React.useState('');
 
+  const registerMutation = trpc.auth.register.useMutation({
+    onSuccess: (data) => {
+      useAppStore.setState({ token: data.token, me: data.user });
+    },
+    onError: (err) => {
+      setError(err.message);
+    }
+  });
+
+  const loginMutation = trpc.auth.login.useMutation({
+    onSuccess: (data) => {
+      useAppStore.setState({ token: data.token, me: data.user });
+    },
+    onError: (err) => {
+      setError(err.message);
+    }
+  });
+
   if (me && token) return null;
 
   const submit = async () => {
     setError('');
-    try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/auth/${mode === 'register' ? 'register' : 'login'}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(mode === 'register' ? { email: form.email, name: form.name, password: form.password } : { email: form.email, password: form.password })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || 'Ошибка');
-      useAppStore.setState({ token: data.token, me: data.user });
-    } catch (e: any) { setError(e.message); }
+    if (mode === 'register') {
+      registerMutation.mutate({ email: form.email, name: form.name, password: form.password });
+    } else {
+      loginMutation.mutate({ email: form.email, password: form.password });
+    }
   };
 
   return (
