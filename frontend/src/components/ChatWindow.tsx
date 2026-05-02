@@ -2,6 +2,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import { useAppStore, Message } from '../store/useAppStore';
 import { themeTokens, createStyles } from '../styles/theme';
 import { authFetch } from '../lib/api';
+import { getSocket } from '../lib/socket';
 import data from '@emoji-mart/data';
 import Picker from '@emoji-mart/react';
 
@@ -180,10 +181,20 @@ export function ChatWindow() {
       .then(data => {
         const msgs = Array.isArray(data) ? data : (data.messages || []);
         setMessages(msgs);
+        
+        // Отправляем событие о прочтении для каждого сообщения от других пользователей
+        const socket = getSocket();
+        if (socket) {
+          msgs.forEach((msg: Message) => {
+            if (msg.sender.id !== me?.id) {
+              socket.emit('message:read', { messageId: msg.id });
+            }
+          });
+        }
       })
       .catch(console.error)
       .finally(() => setIsLoading(false));
-  }, [activeChatId, setMessages]);
+  }, [activeChatId, setMessages, me]);
 
 // ✅ Автоматически отмечаем чат прочитанным при открытии
   useEffect(() => {
@@ -195,17 +206,6 @@ export function ChatWindow() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chatId: activeChatId })
     }).catch(err => console.error('[ChatWindow] Mark read failed:', err));
-  }, [activeChatId]);
-
-  useEffect(() => {
-    if (!activeChatId) return;
-    
-    authFetch('/chats/read', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chatId: activeChatId })
-    }).catch(console.error);
-    
   }, [activeChatId]);
   // Открытие контекстного меню
   const handleContextMenu = (e: React.MouseEvent, message: Message) => {
