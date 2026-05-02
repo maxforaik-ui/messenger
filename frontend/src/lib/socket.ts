@@ -26,12 +26,6 @@ export function initSocket() {
         unreadCount: (c.unreadCount || 0) + (!active && msg.sender.id !== s.me?.id ? 1 : 0)
       });
       
-      // ✅ Если чат активный и сообщение не от нас - отмечаем его прочитанным
-      if (active && msg.sender.id !== s.me?.id && socket?.connected) {
-        console.log('[socket] Auto-marking message as read:', msg.id);
-        socket.emit('message:read', { messageId: msg.id });
-      }
-      
       return {
         messages: s.messages.some(m => m.id === msg.id) ? s.messages : [...s.messages, { ...msg, reactions: msg.reactions || {} }],
         chats: updatedChats

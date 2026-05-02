@@ -171,7 +171,9 @@ export function ChatWindow() {
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const typingLabel = Object.values(typingUsers).some(Boolean) ? 'печатает…' : '';
 
-  // Отслеживаем позицию скролла
+  // Отслеживаем позицию скролла и запоминаем, был ли пользователь внизу при первом рендере
+  const [hasUserScrolled, setHasUserScrolled] = useState(false);
+  
   useEffect(() => {
     const container = messagesContainerRef.current;
     if (!container) return;
@@ -180,11 +182,50 @@ export function ChatWindow() {
       const { scrollTop, scrollHeight, clientHeight } = container;
       const isNearBottom = scrollHeight - scrollTop - clientHeight < 100;
       setIsAtBottom(isNearBottom);
+      // Запоминаем, что пользователь скроллил вручную
+      if (!isNearBottom) setHasUserScrolled(true);
     };
 
     container.addEventListener('scroll', handleScroll);
     return () => container.removeEventListener('scroll', handleScroll);
   }, []);
+
+  // Сбрасываем флаг скролла при смене чата
+  useEffect(() => {
+    setHasUserScrolled(false);
+    setIsAtBottom(true);
+  }, [activeChatId]);
+
+  // Авто-скролл вниз только при первом открытии чата или если пользователь уже внизу
+  // НЕ скроллим вниз, если пользователь просматривает историю (не внизу)
+  useEffect(() => {
+    if (messages.length > 0 && !isLoading && isAtBottom && !hasUserScrolled) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages.length, pendingFiles, isAtBottom, isLoading, hasUserScrolled]);
+
+  // Отправляем read receipt для новых сообщений, если пользователь находится внизу чата
+  // и не просматривает историю (hasUserScrolled = false)
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket?.connected || !activeChatId) return;
+    
+    // Если пользователь внизу чата (isAtBottom) и не скроллил вверх, отмечаем новые сообщения как прочитанные
+    // hasUserScrolled=false означает, что это первое сообщение после открытия чата или пользователь не трогал скролл
+    if (isAtBottom && !hasUserScrolled && messages.length > 0) {
+      // Находим все непрочитанные сообщения от других пользователей и отмечаем их
+      const unreadMessages = messages.filter(msg => 
+        msg.sender.id !== me?.id && !msg.reads?.some(r => r.userId === me?.id)
+      );
+      
+      if (unreadMessages.length > 0) {
+        console.log('[ChatWindow] Marking', unreadMessages.length, 'new message(s) as read');
+        unreadMessages.forEach(msg => {
+          socket.emit('message:read', { messageId: msg.id });
+        });
+      }
+    }
+  }, [messages.length, isAtBottom, hasUserScrolled, activeChatId, me]);
 
   // Отправка события о наборе текста
   useEffect(() => {
@@ -221,13 +262,6 @@ export function ChatWindow() {
     };
   }, [activeChatId]);
 
-  // Авто-скролл вниз только если пользователь внизу
-  useEffect(() => {
-    if (messages.length > 0 && !isLoading && isAtBottom) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [messages.length, pendingFiles, isAtBottom, isLoading]);
-
   // Загрузка сообщений (последние первыми)
   useEffect(() => {
     if (!activeChatId) { setMessages([]); return; }
@@ -247,20 +281,7 @@ export function ChatWindow() {
         // Сообщения уже приходят в правильном порядке (новые последние) с бэкенда
         setMessages(msgs);
         
-        // Отправляем событие о прочтении для каждого сообщения от других пользователей
-        console.log('[ChatWindow] Loaded messages, socket connected:', socket?.connected);
-        if (socket) {
-          msgs.forEach((msg: Message) => {
-            if (msg.sender.id !== me?.id) {
-              console.log('[ChatWindow] Emitting message:read for', msg.id);
-              socket.emit('message:read', { messageId: msg.id });
-            }
-          });
-        } else {
-          console.error('[ChatWindow] Socket not initialized');
-        }
-        
-        // После загрузки прокручиваем вниз только если это первый вход в чат
+        // После загрузки прокручиваем вниз - это первый вход в чат
         setTimeout(() => {
           if (messagesContainerRef.current) {
             messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
@@ -270,6 +291,47 @@ export function ChatWindow() {
       .catch(console.error)
       .finally(() => setIsLoading(false));
   }, [activeChatId, setMessages, me]);
+
+// ✅ Отмечаем все сообщения как прочитанные при загрузке чата (пользователь видит последние сообщения)
+  useEffect(() => {
+    if (!activeChatId || messages.length === 0 || isLoading) return;
+    
+    const socket = getSocket();
+    if (!socket?.connected) return;
+    
+    // Отправляем read receipt для всех непрочитанных сообщений от других пользователей
+    // Это происходит только один раз при загрузке чата, когда пользователь видит последние сообщения
+    const unreadMessages = messages.filter(msg => 
+      msg.sender.id !== me?.id && !msg.reads?.some(r => r.userId === me?.id)
+    );
+    
+    if (unreadMessages.length > 0) {
+      console.log('[ChatWindow] Marking', unreadMessages.length, 'messages as read on chat open');
+      unreadMessages.forEach(msg => {
+        socket.emit('message:read', { messageId: msg.id });
+      });
+    }
+  }, [activeChatId]);
+
+// ✅ Также отмечаем сообщения как прочитанные, если пользователь прокрутил вниз после просмотра истории
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket?.connected || !activeChatId || !isAtBottom) return;
+    
+    // Если пользователь вернулся вниз после скролла вверх, отмечаем все сообщения как прочитанные
+    if (isAtBottom && hasUserScrolled) {
+      const unreadMessages = messages.filter(msg => 
+        msg.sender.id !== me?.id && !msg.reads?.some(r => r.userId === me?.id)
+      );
+      
+      if (unreadMessages.length > 0) {
+        console.log('[ChatWindow] Marking', unreadMessages.length, 'messages as read after scrolling down');
+        unreadMessages.forEach(msg => {
+          socket.emit('message:read', { messageId: msg.id });
+        });
+      }
+    }
+  }, [isAtBottom, hasUserScrolled, activeChatId, messages.length]);
 
 // ✅ Автоматически отмечаем чат прочитанным при открытии
   useEffect(() => {
