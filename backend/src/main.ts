@@ -479,7 +479,7 @@ app.post('/chats/read', authMiddleware, async (req: express.Request & { user?: A
   // 4. Обновляем курсор последнего прочтения
   await prisma.chatMember.update({
     where: { userId_chatId: { userId: req.user!.userId, chatId: parsed.data.chatId } },
-     { lastReadAt: now }
+    data: { lastReadAt: now }
   });
 
   res.json({ ok: true, chatId: parsed.data.chatId, lastReadAt: now });
