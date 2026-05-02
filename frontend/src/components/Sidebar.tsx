@@ -34,6 +34,17 @@ export function Sidebar() {
   const [activeTab, setActiveTab] = React.useState<'chats' | 'users' | 'settings'>('chats');
   const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
+  // Фильтрация чатов по поиску
+  const visibleChats = React.useMemo(() => {
+    if (!ui.search.trim()) return chats;
+    const search = ui.search.toLowerCase();
+    return chats.filter(c => {
+      const peer = c.members.find(m => m.user.id !== me?.id)?.user;
+      const title = c.isDirect ? peer?.name || 'Личный' : c.title || 'Группа';
+      return title.toLowerCase().includes(search);
+    });
+  }, [chats, ui.search, me?.id]);
+
   // Загрузка пользователей
   React.useEffect(() => {
     if (!me?.id) return;
