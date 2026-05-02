@@ -72,7 +72,48 @@ export const appRouter = t.router({
         orderBy: { createdAt: 'desc' }
       });
       return users.map((u: any) => ({ ...u, online: false }));
-    })
+    }),
+
+    updateMe: protectedProcedure
+      .input(z.object({ name: z.string().min(2).max(100) }))
+      .mutation(async ({ input, ctx }) => {
+        const updated = await ctx.prisma.user.update({
+          where: { id: ctx.user.userId },
+          data: { name: input.name }
+        });
+        return { id: updated.id, email: updated.email, name: updated.name };
+      }),
+
+    changePassword: protectedProcedure
+      .input(z.object({ 
+        currentPassword: z.string().min(1),
+        nextPassword: z.string().min(6),
+        confirmPassword: z.string().min(6)
+      }))
+      .mutation(async ({ input, ctx }) => {
+        if (input.nextPassword !== input.confirmPassword) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Passwords do not match' });
+        }
+        const user = await ctx.prisma.user.findUnique({ where: { id: ctx.user.userId } });
+        if (!user || !(await comparePassword(input.currentPassword, user.passwordHash))) {
+          throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Current password is incorrect' });
+        }
+        await ctx.prisma.user.update({
+          where: { id: ctx.user.userId },
+          data: { passwordHash: await hashPassword(input.nextPassword) }
+        });
+        return { success: true };
+      }),
+
+    deleteMe: protectedProcedure
+      .input(z.object({ confirm: z.literal('DELETE') }))
+      .mutation(async ({ ctx }) => {
+        await ctx.prisma.user.update({
+          where: { id: ctx.user.userId },
+          data: { deletedAt: new Date() }
+        });
+        return { success: true };
+      })
   }),
 
   // Chats
