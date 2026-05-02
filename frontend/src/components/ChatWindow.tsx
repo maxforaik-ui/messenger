@@ -175,6 +175,14 @@ export function ChatWindow() {
   // Загрузка сообщений
   useEffect(() => {
     if (!activeChatId) { setMessages([]); return; }
+    
+    // Присоединяемся к комнате чата через WebSocket
+    const socket = getSocket();
+    if (socket) {
+      console.log('[ChatWindow] Joining chat room:', activeChatId);
+      socket.emit('chat:join', activeChatId);
+    }
+    
     setIsLoading(true);
     authFetch(`/chats/${activeChatId}/messages?limit=50`)
       .then(r => r.json())
@@ -183,7 +191,6 @@ export function ChatWindow() {
         setMessages(msgs);
         
         // Отправляем событие о прочтении для каждого сообщения от других пользователей
-        const socket = getSocket();
         console.log('[ChatWindow] Loaded messages, socket connected:', socket?.connected);
         if (socket) {
           msgs.forEach((msg: Message) => {
