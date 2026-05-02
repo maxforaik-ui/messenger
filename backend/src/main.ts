@@ -457,7 +457,7 @@ app.post('/chats/read', authMiddleware, async (req: express.Request & { user?: A
   if (unreadMessages.length > 0) {
     // 2. Создаем записи в БД (чтобы после F5 статус сохранился)
     await prisma.messageRead.createMany({
-       unreadMessages.map(msg => ({
+        data: unreadMessages.map(msg => ({
         messageId: msg.id,
         userId: req.user!.userId,
         readAt: now
@@ -479,7 +479,7 @@ app.post('/chats/read', authMiddleware, async (req: express.Request & { user?: A
   // 4. Обновляем курсор последнего прочтения
   await prisma.chatMember.update({
     where: { userId_chatId: { userId: req.user!.userId, chatId: parsed.data.chatId } },
-     { lastReadAt: now }
+     data:{ lastReadAt: now }
   });
 
   res.json({ ok: true, chatId: parsed.data.chatId, lastReadAt: now });
