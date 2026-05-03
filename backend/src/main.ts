@@ -422,7 +422,7 @@ app.get('/chats/:chatId/pins', authMiddleware, async (req: express.Request & { u
   if (!member) return res.status(403).json({ message: 'Forbidden' });
   const pins = await prisma.pinnedMessage.findMany({
     where: { chatId: req.params.chatId },
-    include: { message: { include: { sender: { select: { id: true, name: true, email: true } }, reads: { select: { userId: true, readAt: true } }, attachments: true, replyTo: { include: { sender: { select: { name: true } } } } }, pinnedBy: { select: { id: true, name: true, email: true } } },
+    include: { message: { include: { sender: { select: { id: true, name: true, email: true } }, reads: { select: { userId: true, readAt: true } }, attachments: true, replyTo: { include: { sender: { select: { name: true } } } } }, pinnedBy: { select: { id: true, name: true, email: true } } } },
     orderBy: { createdAt: 'desc' }
   });
   res.json(pins.map((pin) => ({ ...pin, message: formatMessage(pin.message) })));
@@ -436,7 +436,7 @@ app.post('/messages/:messageId/pin', authMiddleware, async (req: express.Request
   const pin = await prisma.pinnedMessage.upsert({
     where: { chatId_messageId: { chatId: message.chatId, messageId: message.id } },
     update: {}, create: { chatId: message.chatId, messageId: message.id, pinnedById: req.user!.userId },
-    include: { message: { include: { sender: { select: { id: true, name: true, email: true } }, reads: { select: { userId: true, readAt: true } }, attachments: true, replyTo: { include: { sender: { select: { name: true } } } } }, pinnedBy: { select: { id: true, name: true, email: true } } }
+    include: { message: { include: { sender: { select: { id: true, name: true, email: true } }, reads: { select: { userId: true, readAt: true } }, attachments: true, replyTo: { include: { sender: { select: { name: true } } } } }, pinnedBy: { select: { id: true, name: true, email: true } } } }
   });
   io.to(`chat:${message.chatId}`).emit('message:pinned', { chatId: message.chatId, pin: { ...pin, message: formatMessage(pin.message) } });
   res.json({ ...pin, message: formatMessage(pin.message) });
