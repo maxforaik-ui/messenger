@@ -1,10 +1,8 @@
 import React from 'react';
 import { useAppStore } from './store/useAppStore';
-import { themeTokens, createStyles } from './styles/theme';
 import { AuthScreen } from './components/AuthScreen';
 import { Sidebar } from './components/Sidebar';
 import { ChatWindow } from './components/ChatWindow';
-import { SettingsModal } from './components/SettingsModal';
 import { PasswordModal } from './components/PasswordModal';
 import { InstallPrompt } from './components/InstallPrompt';
 import { initSocket, disconnectSocket } from './lib/socket';
@@ -12,8 +10,6 @@ import { authFetch } from './lib/api';
 
 export function App() {
   const { me, token, theme, ui, setUi, setUsers, setChats, setNotifications } = useAppStore();
-  const p = themeTokens[theme];
-  const s = React.useMemo(() => createStyles(p), [p]);
 
   React.useEffect(() => {
     if (!token || !me?.id) return;
@@ -30,11 +26,14 @@ export function App() {
     return () => disconnectSocket();
   }, [token, me?.id, setUsers, setChats, setNotifications]);
 
+  // ✅ FIX: Переключение темы через класс на html
   React.useEffect(() => {
-    document.body.style.margin = '0';
-    document.body.style.background = p.bg;
-    document.body.style.color = p.text;
-  }, [p]);
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [theme]);
 
   React.useEffect(() => {
     if (ui.toast) {
@@ -46,12 +45,16 @@ export function App() {
   if (!me || !token) return <AuthScreen />;
 
   return (
-    <div style={s.layout}>
-      {ui.toast && <div style={s.toast}>{ui.toast}</div>}
+    // ✅ FIX: Используем Tailwind классы, а не s.layout
+    <div className="flex h-screen w-screen overflow-hidden bg-[var(--color-bg)] text-[var(--color-text)] font-sans">
+      {ui.toast && (
+        <div className="fixed top-4 right-4 z-30 bg-gray-900 text-white px-3 py-2 rounded-xl shadow-lg">
+          {ui.toast}
+        </div>
+      )}
       <InstallPrompt />
       <Sidebar />
       <ChatWindow />
-      <SettingsModal />
       <PasswordModal />
     </div>
   );

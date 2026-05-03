@@ -18,13 +18,18 @@ interface AppState {
   typingUsers: Record<string, boolean>; setTypingUsers: (t: Record<string, boolean> | ((p: Record<string, boolean>) => Record<string, boolean>)) => void;
   notifications: NotificationPayload[]; setNotifications: (n: NotificationPayload[]) => void;
   theme: ThemeMode; toggleTheme: () => void;
+  drafts: Record<string, string>;
+  setDraft: (chatId: string, text: string) => void;
+
   ui: { 
     showUsers: boolean; 
     showSettings: boolean; 
     showNotifications: boolean; 
     showProfile: boolean; // ← Добавлено
     search: string; 
-    toast: string 
+    toast: string;
+    sOnline: boolean;
+    setIsOnline: (v: boolean) => void;
   };
   setUi: (p: Partial<AppState['ui']>) => void;
   reset: () => void;
@@ -47,8 +52,12 @@ export const useAppStore = create<AppState>()(
       theme: 'light', toggleTheme: () => set(s => ({ theme: s.theme === 'light' ? 'dark' : 'light' })),
       ui: { showUsers: false, showSettings: false, showNotifications: false, showProfile: false, search: '', toast: '' },
       setUi: (p) => set(s => ({ ui: { ...s.ui, ...p } })),
-      reset: () => set({ token: null, me: null, chats: [], messages: [], users: [], activeChatId: '', typingUsers: {}, notifications: [], pendingFiles: [], ui: { ...get().ui, showSettings: false, showNotifications: false, toast: '' } })
+      reset: () => set({ token: null, me: null, chats: [], messages: [], users: [], activeChatId: '', typingUsers: {}, notifications: [], pendingFiles: [], ui: { ...get().ui, showSettings: false, showNotifications: false, toast: '' } }),
+      drafts: {},
+      setDraft: (chatId, text) => set(s => ({ drafts: { ...s.drafts, [chatId]: text } })),
+      isOnline: true,
+      setIsOnline: (v) => set({ isOnline: v })
     }),
-    { name: 'messenger-v5.1', storage: createJSONStorage(() => sessionStorage) }
+    { name: 'messenger-v5.4', storage: createJSONStorage(() => sessionStorage) }
   )
 );

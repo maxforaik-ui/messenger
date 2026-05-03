@@ -60,3 +60,17 @@ __pycache__/
 *.lz
 *.lzo
 ```
+backend/package-lock.json
+backend/package-lock.json
+backend/prisma/schema.prisma.txt
+backend/prisma/schema.prisma.txt
+backend/prisma/schema.prisma.txt
+backend/prisma/migrations/20260502112620_sdsadas/migration.sql
+backend/scripts/generate-vapid-keys.js
+frontend/package-lock.json
+frontend/dev-dist/registerSW.js
+frontend/dev-dist/sw.js
+frontend/dev-dist/workbox-2ae722a1.js
+backend/prisma/schema.prisma.txt
+backend/package-lock.json
+backend/package-lock.json

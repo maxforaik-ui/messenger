@@ -55,9 +55,7 @@ function updatePresence(userId: string, delta: 1 | -1) {
   presenceCounts.set(userId, next);
   const now = new Date().toISOString();
   if (next === 0) lastSeenMap.set(userId, now);
-  const isOnline = next > 0;
-  console.log('[presence:update]', { userId, online: isOnline, connections: next });
-  io.emit('presence:update', { userId, online: isOnline, lastSeenAt: lastSeenMap.get(userId) || now });
+  io.emit('presence:update', { userId, online: next > 0, lastSeenAt: lastSeenMap.get(userId) || now });
 }
 
 // === Schemas ===
@@ -90,17 +88,10 @@ function formatMessage(message: any) {
 }
 
 async function markReadForMessage(userId: string, messageId: string) {
-  console.log('[markReadForMessage] called', { userId, messageId });
   const message = await prisma.message.findUnique({ where: { id: messageId } });
-  if (!message) {
-    console.log('[markReadForMessage] message not found', messageId);
-    return null;
-  }
+  if (!message) return null;
   const member = await ensureChatMembership(userId, message.chatId);
-  if (!member) {
-    console.log('[markReadForMessage] not a member of chat', message.chatId);
-    return null;
-  }
+  if (!member) return null;
   const now = new Date();
   const read = await prisma.messageRead.upsert({
     where: { messageId_userId: { messageId, userId } },
@@ -111,7 +102,6 @@ async function markReadForMessage(userId: string, messageId: string) {
     where: { userId_chatId: { userId, chatId: message.chatId } },
     data: { lastReadAt: now }
   });
-  console.log('[markReadForMessage] emitting message:read:updated', { messageId, userId, chatId: message.chatId });
   io.to(`chat:${message.chatId}`).emit('message:read:updated', { messageId, userId, readAt: read.readAt, chatId: message.chatId });
   return read;
 }
@@ -142,7 +132,7 @@ app.post('/auth/login', async (req, res) => {
 app.get('/users', authMiddleware, async (req: express.Request & { user?: AuthUser }, res) => {
   const users = await prisma.user.findMany({
     where: { id: { not: req.user!.userId }, deletedAt: null },
-    select: { id: true, email: true, name: true, createdAt: true },
+    select: { id: true, email: true, name: true, createdAt: true, avatarUrl: true },
     orderBy: { createdAt: 'desc' }
   });
   res.json(users.map((u) => ({ ...u, online: false })));
@@ -155,20 +145,20 @@ app.post('/chats/direct', authMiddleware, async (req: express.Request & { user?:
   const peerUserId = parsed.data.peerUserId;
   const existing = await prisma.chat.findFirst({
     where: {
-      isDirect: true,
-      deletedAt: null,
+      isDirect: true, deletedAt: null,
       members: { some: { userId: currentUserId } },
       AND: [{ members: { some: { userId: peerUserId } } }]
     },
     include: {
-      members: { include: { user: { select: { id: true, name: true, email: true } } } },
+      members: { include: { user: { select: { id: true, name: true, email: true, avatarUrl: true } } } },
       messages: { orderBy: { createdAt: 'desc' }, take: 1, include: { attachments: true } }
     }
   });
   if (existing) return res.json(existing);
+  // ✅ FIX: Добавлено data:
   const chat = await prisma.chat.create({
     data: { isDirect: true, members: { create: [{ userId: currentUserId }, { userId: peerUserId }] } },
-    include: { members: { include: { user: { select: { id: true, name: true, email: true } } } }, messages: true }
+    include: { members: { include: { user: { select: { id: true, name: true, email: true, avatarUrl: true } } } }, messages: true }
   });
   res.json(chat);
 });
@@ -178,13 +168,14 @@ app.post('/chats/group', authMiddleware, async (req: express.Request & { user?: 
   if (!parsed.success) return res.status(400).json(parsed.error.flatten());
   const creatorId = req.user!.userId;
   const uniqueMemberIds = Array.from(new Set([creatorId, ...parsed.data.memberIds]));
+  // ✅ FIX: Добавлено data:
   const chat = await prisma.chat.create({
     data: {
       title: parsed.data.title,
       isDirect: false,
       members: { create: uniqueMemberIds.map((userId) => ({ userId, role: userId === creatorId ? 'owner' : 'member' })) }
     },
-    include: { members: { include: { user: { select: { id: true, name: true, email: true } } } } }
+    include: { members: { include: { user: { select: { id: true, name: true, email: true, avatarUrl: true } } } } }
   });
   res.json(chat);
 });
@@ -228,34 +219,19 @@ app.get('/chats', authMiddleware, async (req: express.Request & { user?: AuthUse
   const chats = await prisma.chat.findMany({
     where: { members: { some: { userId } }, deletedAt: null },
     include: {
-      members: { include: { user: { select: { id: true, name: true, email: true } } } },
+      members: { include: { user: { select: { id: true, name: true, email: true, avatarUrl: true } } } },
       messages: {
-        where: { deletedAt: null },
-        orderBy: { createdAt: 'desc' },
-        take: 1,
-        include: {
-          reads: { select: { userId: true, readAt: true } },
-          attachments: true,
-          replyTo: { include: { sender: { select: { name: true } } } }
-        }
+        where: { deletedAt: null }, orderBy: { createdAt: 'desc' }, take: 1,
+        include: { reads: { select: { userId: true, readAt: true } }, attachments: true, replyTo: { include: { sender: { select: { name: true } } } } }
       },
-      pins: {
-        include: { message: { include: { sender: { select: { name: true } } } } },
-        orderBy: { createdAt: 'desc' },
-        take: 1
-      }
+      pins: { include: { message: { include: { sender: { select: { name: true } } } } }, orderBy: { createdAt: 'desc' }, take: 1 }
     },
     orderBy: { createdAt: 'desc' }
   });
   const withUnread = await Promise.all(chats.map(async (chat) => {
     const membership = await prisma.chatMember.findUnique({ where: { userId_chatId: { userId, chatId: chat.id } } });
     const unreadCount = await prisma.message.count({
-      where: {
-        chatId: chat.id,
-        senderId: { not: userId },
-        deletedAt: null,
-        createdAt: membership?.lastReadAt ? { gt: membership.lastReadAt } : undefined
-      }
+      where: { chatId: chat.id, senderId: { not: userId }, deletedAt: null, createdAt: membership?.lastReadAt ? { gt: membership.lastReadAt } : undefined }
     });
     return { ...chat, unreadCount };
   }));
@@ -273,7 +249,7 @@ app.get('/chats/:chatId/messages', authMiddleware, async (req, res) => {
   const messages = await prisma.message.findMany({
     where,
     include: {
-      sender: { select: { id: true, name: true, email: true } },
+      sender: { select: { id: true, name: true, email: true, avatarUrl: true } },
       reads: { select: { userId: true, readAt: true } },
       attachments: true,
       replyTo: { include: { sender: { select: { name: true } } } }
@@ -299,31 +275,20 @@ app.post('/messages', authMiddleware, async (req: express.Request & { user?: Aut
   const member = await ensureChatMembership(senderId, chatId);
   if (!member) return res.status(403).json({ message: 'Forbidden' });
 
-  // === РЕДАКТИРОВАНИЕ СООБЩЕНИЯ ===
   if (editMessageId) {
     const existing = await prisma.message.findUnique({ where: { id: editMessageId } });
     if (!existing || existing.senderId !== senderId || existing.chatId !== chatId) return res.status(404).json({ message: 'Message not found or forbidden' });
-    
     const updated = await prisma.message.update({
-      where: { id: editMessageId },
-      data: { body },
-      include: {
-        sender: { select: { id: true, name: true, email: true } },
-        reads: true,
-        attachments: true,
-        replyTo: { include: { sender: { select: { name: true } } } }
-      }
+      where: { id: editMessageId }, data: { body },
+      include: { sender: { select: { id: true, name: true, email: true } }, reads: true, attachments: true, replyTo: { include: { sender: { select: { name: true } } } } }
     });
-    
     const formatted = formatMessage(updated);
     io.to(`chat:${chatId}`).emit('message:updated', formatted);
     io.to(`chat:${chatId}`).emit('typing:update', { chatId, userId: senderId, isTyping: false });
-    
     if (idempotencyKey) processedMutations.set(`${senderId}:${idempotencyKey}`, formatted);
     return res.json(formatted);
   }
 
-  // === НОВОЕ СООБЩЕНИЕ ===
   let replyToMessageIdSafe = replyToMessageId;
   if (replyToMessageIdSafe) {
     const replyTarget = await prisma.message.findUnique({ where: { id: replyToMessageIdSafe } });
@@ -332,31 +297,19 @@ app.post('/messages', authMiddleware, async (req: express.Request & { user?: Aut
   
   const message = await prisma.message.create({
     data: { chatId, senderId, body, replyToMessageId: replyToMessageIdSafe },
-    include: {
-      sender: { select: { id: true, name: true, email: true } },
-      reads: true,
-      attachments: true,
-      replyTo: { include: { sender: { select: { name: true } } } }
-    }
+    include: { sender: { select: { id: true, name: true, email: true } }, reads: true, attachments: true, replyTo: { include: { sender: { select: { name: true } } } } }
   });
   
   const formatted = formatMessage(message);
   io.to(`chat:${chatId}`).emit('message:new', formatted);
   io.to(`chat:${chatId}`).emit('typing:update', { chatId, userId: senderId, isTyping: false });
 
-  // 🔔 PUSH-УВЕДОМЛЕНИЯ
   const chatMembers = await prisma.chatMember.findMany({ where: { chatId }, include: { user: true } });
   for (const m of chatMembers) {
     if (m.userId !== senderId) {
       const isOnline = (presenceCounts.get(m.userId) || 0) > 0;
       if (!isOnline) {
-        sendPushNotification(
-          m.userId,
-          `💬 ${message.sender.name}`,
-          formatted.body || '📎 Новое вложение',
-          '/icon-192.png',
-          { chatId, messageId: message.id }
-        ).catch(console.error);
+        sendPushNotification(m.userId, `💬 ${message.sender.name}`, formatted.body || '📎 Новое вложение', '/icon-192.png', { chatId, messageId: message.id }).catch(console.error);
       }
     }
   }
@@ -375,18 +328,11 @@ app.post('/messages/:messageId/reactions', authMiddleware, async (req: express.R
   const current = (message as any).reactions || {};
   const next = { ...current, [parsed.data.emoji]: Number(current[parsed.data.emoji] || 0) + 1 };
   const updated = await prisma.message.update({
-    where: { id: message.id },
-    data: { reactions: next },
-    include: {
-      sender: { select: { id: true, name: true, email: true } },
-      reads: true,
-      attachments: true,
-      replyTo: { include: { sender: { select: { name: true } } } }
-    }
+    where: { id: message.id }, data: { reactions: next },
+    include: { sender: { select: { id: true, name: true, email: true } }, reads: true, attachments: true, replyTo: { include: { sender: { select: { name: true } } } } }
   });
-  const formatted = formatMessage(updated);
-  io.to(`chat:${message.chatId}`).emit('message:updated', formatted);
-  res.json(formatted);
+  io.to(`chat:${message.chatId}`).emit('message:updated', formatMessage(updated));
+  res.json(formatMessage(updated));
 });
 
 app.delete('/messages/:messageId', authMiddleware, async (req: express.Request & { user?: AuthUser }, res) => {
@@ -394,18 +340,11 @@ app.delete('/messages/:messageId', authMiddleware, async (req: express.Request &
   if (!message) return res.status(404).json({ message: 'Message not found' });
   if (message.senderId !== req.user!.userId) return res.status(403).json({ message: 'Forbidden' });
   const updated = await prisma.message.update({
-    where: { id: message.id },
-    data: { body: null, deletedAt: new Date() },
-    include: {
-      sender: { select: { id: true, name: true, email: true } },
-      reads: true,
-      attachments: true,
-      replyTo: { include: { sender: { select: { name: true } } } }
-    }
+    where: { id: message.id }, data: { body: null, deletedAt: new Date() },
+    include: { sender: { select: { id: true, name: true, email: true } }, reads: true, attachments: true, replyTo: { include: { sender: { select: { name: true } } } } }
   });
-  const formatted = formatMessage(updated);
-  io.to(`chat:${message.chatId}`).emit('message:updated', formatted);
-  res.json(formatted);
+  io.to(`chat:${message.chatId}`).emit('message:updated', formatMessage(updated));
+  res.json(formatMessage(updated));
 });
 
 app.post('/messages/:messageId/attachments', authMiddleware, upload.single('file'), async (req: express.Request & { user?: AuthUser, file?: Express.Multer.File }, res) => {
@@ -419,15 +358,7 @@ app.post('/messages/:messageId/attachments', authMiddleware, upload.single('file
   if (!member) return res.status(403).json({ message: 'Forbidden' });
   const url = `${req.protocol}://${req.get('host')}/uploads/${path.basename(file.path)}`;
   const attachment = await prisma.attachment.create({
-    data: {
-      messageId,
-      uploaderId: userId,
-      originalName: file.originalname,
-      mimeType: file.mimetype,
-      sizeBytes: file.size,
-      storagePath: file.path,
-      url
-    }
+    data: { messageId, uploaderId: userId, originalName: file.originalname, mimeType: file.mimetype, sizeBytes: file.size, storagePath: file.path, url }
   });
   io.to(`chat:${message.chatId}`).emit('attachment:new', { chatId: message.chatId, messageId, attachment });
   res.json(attachment);
@@ -444,56 +375,26 @@ app.post('/messages/read', authMiddleware, async (req: express.Request & { user?
 app.post('/chats/read', authMiddleware, async (req: express.Request & { user?: AuthUser }, res) => {
   const parsed = markChatReadSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json(parsed.error.flatten());
-
   const member = await ensureChatMembership(req.user!.userId, parsed.data.chatId);
   if (!member) return res.status(403).json({ message: 'Forbidden' });
-
   const now = new Date();
-
-  // 1. Ищем сообщения, которые:
-  // - В этом чате
-  // - Отправлены НЕ текущим пользователем
-  // - ЕЩЁ НЕ прочитаны текущим пользователем (нет записи в MessageRead)
   const unreadMessages = await prisma.message.findMany({
-    where: {
-      chatId: parsed.data.chatId,
-      senderId: { not: req.user!.userId },
-      deletedAt: null,
-      reads: {
-        none: { userId: req.user!.userId }
-      }
-    },
+    where: { chatId: parsed.data.chatId, senderId: { not: req.user!.userId }, deletedAt: null, reads: { none: { userId: req.user!.userId } } },
     select: { id: true }
   });
-
   if (unreadMessages.length > 0) {
-    // 2. ✅ КРИТИЧНО: Создаем записи в БД (чтобы после F5 статус сохранялся)
     await prisma.messageRead.createMany({
-       data: unreadMessages.map(msg => ({
-        messageId: msg.id,
-        userId: req.user!.userId,
-        readAt: now
-      })),
+      data: unreadMessages.map(msg => ({ messageId: msg.id, userId: req.user!.userId, readAt: now })),
       skipDuplicates: true
     });
-
-    // 3. ✅ КРИТИЧНО: Отправляем событие каждому сообщению в сокет (мгновенное обновление)
     for (const msg of unreadMessages) {
-      io.to(`chat:${parsed.data.chatId}`).emit('message:read:updated', {
-        messageId: msg.id,
-        userId: req.user!.userId,
-        readAt: now.toISOString(),
-        chatId: parsed.data.chatId
-      });
+      io.to(`chat:${parsed.data.chatId}`).emit('message:read:updated', { messageId: msg.id, userId: req.user!.userId, readAt: now.toISOString(), chatId: parsed.data.chatId });
     }
   }
-
-  // 4. Обновляем курсор последнего прочтения
   await prisma.chatMember.update({
     where: { userId_chatId: { userId: req.user!.userId, chatId: parsed.data.chatId } },
-     data:{ lastReadAt: now }
+    data: { lastReadAt: now }
   });
-
   res.json({ ok: true, chatId: parsed.data.chatId, lastReadAt: now });
 });
 
@@ -504,38 +405,16 @@ app.get('/search', authMiddleware, async (req: express.Request & { user?: AuthUs
   const filterType = parsed.data.type || 'all';
   const userId = req.user!.userId;
   const chats = await prisma.chat.findMany({
-    where: {
-      members: { some: { userId } },
-      deletedAt: null,
-      OR: filterType === 'users' ? [] : [{ title: { contains: q, mode: 'insensitive' } }, { messages: { some: { body: { contains: q, mode: 'insensitive' }, deletedAt: null } } }]
-    },
-    include: {
-      members: { include: { user: { select: { id: true, name: true, email: true } } } },
-      messages: {
-        where: { deletedAt: null },
-        orderBy: { createdAt: 'desc' },
-        take: 5,
-        include: {
-          sender: { select: { id: true, name: true, email: true } },
-          reads: { select: { userId: true, readAt: true } },
-          attachments: true,
-          replyTo: { include: { sender: { select: { name: true } } } }
-        }
-      }
-    },
+    where: { members: { some: { userId } }, deletedAt: null, OR: filterType === 'users' ? [] : [{ title: { contains: q, mode: 'insensitive' } }, { messages: { some: { body: { contains: q, mode: 'insensitive' }, deletedAt: null } } }] },
+    include: { members: { include: { user: { select: { id: true, name: true, email: true } } } }, messages: { where: { deletedAt: null }, orderBy: { createdAt: 'desc' }, take: 5, include: { sender: { select: { id: true, name: true, email: true } }, reads: { select: { userId: true, readAt: true } }, attachments: true, replyTo: { include: { sender: { select: { name: true } } } } } } },
     take: 20
   });
   const users = await prisma.user.findMany({
     where: { id: { not: userId }, deletedAt: null, OR: [{ name: { contains: q, mode: 'insensitive' } }, { email: { contains: q, mode: 'insensitive' } }] },
-    select: { id: true, name: true, email: true, createdAt: true },
-    take: 20
+    select: { id: true, name: true, email: true, createdAt: true, avatarUrl: true }, take: 20
   });
   const messages = chats.flatMap((chat) => chat.messages.map((message) => ({ ...formatMessage(message), chatId: chat.id })));
-  res.json({
-    chats: chats.map((chat) => ({ ...chat, messages: chat.messages.map(formatMessage) })),
-    users: users.map((u) => ({ ...u, online: (presenceCounts.get(u.id) || 0) > 0, lastSeenAt: lastSeenMap.get(u.id) || null })),
-    messages
-  });
+  res.json({ chats: chats.map((chat) => ({ ...chat, messages: chat.messages.map(formatMessage) })), users: users.map((u) => ({ ...u, online: (presenceCounts.get(u.id) || 0) > 0, lastSeenAt: lastSeenMap.get(u.id) || null })), messages });
 });
 
 app.get('/chats/:chatId/pins', authMiddleware, async (req: express.Request & { user?: AuthUser }, res) => {
@@ -543,17 +422,7 @@ app.get('/chats/:chatId/pins', authMiddleware, async (req: express.Request & { u
   if (!member) return res.status(403).json({ message: 'Forbidden' });
   const pins = await prisma.pinnedMessage.findMany({
     where: { chatId: req.params.chatId },
-    include: {
-      message: {
-        include: {
-          sender: { select: { id: true, name: true, email: true } },
-          reads: { select: { userId: true, readAt: true } },
-          attachments: true,
-          replyTo: { include: { sender: { select: { name: true } } } }
-        }
-      },
-      pinnedBy: { select: { id: true, name: true, email: true } }
-    },
+    include: { message: { include: { sender: { select: { id: true, name: true, email: true } }, reads: { select: { userId: true, readAt: true } }, attachments: true, replyTo: { include: { sender: { select: { name: true } } } } }, pinnedBy: { select: { id: true, name: true, email: true } } },
     orderBy: { createdAt: 'desc' }
   });
   res.json(pins.map((pin) => ({ ...pin, message: formatMessage(pin.message) })));
@@ -566,19 +435,8 @@ app.post('/messages/:messageId/pin', authMiddleware, async (req: express.Request
   if (!member) return res.status(403).json({ message: 'Forbidden' });
   const pin = await prisma.pinnedMessage.upsert({
     where: { chatId_messageId: { chatId: message.chatId, messageId: message.id } },
-    update: {},
-    create: { chatId: message.chatId, messageId: message.id, pinnedById: req.user!.userId },
-    include: {
-      message: {
-        include: {
-          sender: { select: { id: true, name: true, email: true } },
-          reads: { select: { userId: true, readAt: true } },
-          attachments: true,
-          replyTo: { include: { sender: { select: { name: true } } } }
-        }
-      },
-      pinnedBy: { select: { id: true, name: true, email: true } }
-    }
+    update: {}, create: { chatId: message.chatId, messageId: message.id, pinnedById: req.user!.userId },
+    include: { message: { include: { sender: { select: { id: true, name: true, email: true } }, reads: { select: { userId: true, readAt: true } }, attachments: true, replyTo: { include: { sender: { select: { name: true } } } } }, pinnedBy: { select: { id: true, name: true, email: true } } }
   });
   io.to(`chat:${message.chatId}`).emit('message:pinned', { chatId: message.chatId, pin: { ...pin, message: formatMessage(pin.message) } });
   res.json({ ...pin, message: formatMessage(pin.message) });
@@ -599,10 +457,7 @@ app.get('/chats/:chatId/media', authMiddleware, async (req: express.Request & { 
   if (!member) return res.status(403).json({ message: 'Forbidden' });
   const attachments = await prisma.attachment.findMany({
     where: { message: { chatId: req.params.chatId, deletedAt: null } },
-    include: {
-      uploader: { select: { id: true, name: true, email: true } },
-      message: { select: { id: true, body: true, createdAt: true } }
-    },
+    include: { uploader: { select: { id: true, name: true, email: true } }, message: { select: { id: true, body: true, createdAt: true } } },
     orderBy: { createdAt: 'desc' }
   });
   res.json(attachments);
@@ -613,19 +468,9 @@ app.get('/notifications', authMiddleware, async (req: express.Request & { user?:
   const memberships = await prisma.chatMember.findMany({ where: { userId } });
   const notifications = await Promise.all(memberships.map(async (m) => {
     const msgs = await prisma.message.findMany({
-      where: {
-        chatId: m.chatId,
-        senderId: { not: userId },
-        deletedAt: null,
-        createdAt: m.lastReadAt ? { gt: m.lastReadAt } : undefined
-      },
-      include: {
-        sender: { select: { id: true, name: true, email: true } },
-        attachments: true,
-        replyTo: { include: { sender: { select: { name: true } } } }
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 5
+      where: { chatId: m.chatId, senderId: { not: userId }, deletedAt: null, createdAt: m.lastReadAt ? { gt: m.lastReadAt } : undefined },
+      include: { sender: { select: { id: true, name: true, email: true } }, attachments: true, replyTo: { include: { sender: { select: { name: true } } } } },
+      orderBy: { createdAt: 'desc' }, take: 5
     });
     return msgs.map((msg) => ({ type: 'message', chatId: m.chatId, message: formatMessage(msg) }));
   }));
@@ -634,10 +479,7 @@ app.get('/notifications', authMiddleware, async (req: express.Request & { user?:
 
 app.get('/me', authMiddleware, async (req: express.Request & { user?: AuthUser }, res) => {
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: req.user!.userId, deletedAt: null },
-      select: { id: true, name: true, email: true }
-    });
+    const user = await prisma.user.findUnique({ where: { id: req.user!.userId, deletedAt: null }, select: { id: true, name: true, email: true, avatarUrl: true } });
     if (!user) return res.status(404).json({ message: 'User not found' });
     res.json({ ...user, online: (presenceCounts.get(user.id) || 0) > 0 });
   } catch (error) {
@@ -650,11 +492,7 @@ app.patch('/me', authMiddleware, async (req: express.Request & { user?: AuthUser
   const parsed = updateMeSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json(parsed.error.flatten());
   try {
-    const updated = await prisma.user.update({
-      where: { id: req.user!.userId, deletedAt: null },
-      data: { name: parsed.data.name },
-      select: { id: true, name: true, email: true }
-    });
+    const updated = await prisma.user.update({ where: { id: req.user!.userId, deletedAt: null }, data: { name: parsed.data.name }, select: { id: true, name: true, email: true } });
     res.json({ ...updated, online: (presenceCounts.get(updated.id) || 0) > 0 });
   } catch (error) {
     console.error('PATCH /me error:', error);
@@ -671,10 +509,7 @@ app.post('/me/change-password', authMiddleware, async (req: express.Request & { 
     if (!user) return res.status(404).json({ message: 'User not found' });
     const isValid = await comparePassword(parsed.data.currentPassword, user.passwordHash);
     if (!isValid) return res.status(400).json({ message: 'Current password is incorrect' });
-    await prisma.user.update({
-      where: { id: req.user!.userId },
-      data: { passwordHash: await hashPassword(parsed.data.nextPassword) }
-    });
+    await prisma.user.update({ where: { id: req.user!.userId }, data: { passwordHash: await hashPassword(parsed.data.nextPassword) } });
     res.json({ message: 'Password successfully changed' });
   } catch (error) {
     console.error('POST /me/change-password error:', error);
@@ -686,10 +521,7 @@ app.delete('/me', authMiddleware, async (req: express.Request & { user?: AuthUse
   const parsed = deleteMeSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json(parsed.error.flatten());
   try {
-    await prisma.user.update({
-      where: { id: req.user!.userId },
-      data: { deletedAt: new Date() }
-    });
+    await prisma.user.update({ where: { id: req.user!.userId }, data: { deletedAt: new Date() } });
     res.json({ message: 'Account successfully deleted' });
   } catch (error: any) {
     if (error.code === 'P2003') return res.status(400).json({ message: 'Cannot delete account: active relations exist.' });
@@ -702,10 +534,7 @@ app.delete('/me', authMiddleware, async (req: express.Request & { user?: AuthUse
 app.post('/chats/:chatId/archive', authMiddleware, async (req: express.Request & { user?: AuthUser }, res) => {
   const member = await ensureChatMembership(req.user!.userId, req.params.chatId);
   if (!member) return res.status(403).json({ message: 'Forbidden' });
-  const chat = await prisma.chat.update({
-    where: { id: req.params.chatId },
-    data: { archived: true }
-  });
+  const chat = await prisma.chat.update({ where: { id: req.params.chatId }, data: { archived: true } });
   io.to(`chat:${req.params.chatId}`).emit('chat:archived', { chatId: req.params.chatId });
   res.json(chat);
 });
@@ -713,10 +542,7 @@ app.post('/chats/:chatId/archive', authMiddleware, async (req: express.Request &
 app.post('/chats/:chatId/unarchive', authMiddleware, async (req: express.Request & { user?: AuthUser }, res) => {
   const member = await ensureChatMembership(req.user!.userId, req.params.chatId);
   if (!member) return res.status(403).json({ message: 'Forbidden' });
-  const chat = await prisma.chat.update({
-    where: { id: req.params.chatId },
-    data: { archived: false }
-  });
+  const chat = await prisma.chat.update({ where: { id: req.params.chatId }, data: { archived: false } });
   io.to(`chat:${req.params.chatId}`).emit('chat:unarchived', { chatId: req.params.chatId });
   res.json(chat);
 });
@@ -725,10 +551,7 @@ app.get('/chats/archived', authMiddleware, async (req: express.Request & { user?
   const userId = req.user!.userId;
   const chats = await prisma.chat.findMany({
     where: { members: { some: { userId } }, archived: true, deletedAt: null },
-    include: {
-      members: { include: { user: { select: { id: true, name: true, email: true } } } },
-      messages: { orderBy: { createdAt: 'desc' }, take: 1, include: { attachments: true } }
-    }
+    include: { members: { include: { user: { select: { id: true, name: true, email: true } } } }, messages: { orderBy: { createdAt: 'desc' }, take: 1, include: { attachments: true } } }
   });
   res.json(chats);
 });
@@ -737,33 +560,20 @@ app.get('/chats/archived', authMiddleware, async (req: express.Request & { user?
 app.post('/messages/:messageId/forward', authMiddleware, async (req: express.Request & { user?: AuthUser }, res) => {
   const { targetChatId } = req.body;
   if (!targetChatId) return res.status(400).json({ message: 'targetChatId required' });
-  
-  const message = await prisma.message.findUnique({ where: { id: req.params.messageId } });
+  const message = await prisma.message.findUnique({ where: { id: req.params.messageId }, include: { attachments: true } });
   if (!message) return res.status(404).json({ message: 'Message not found' });
-  
   const sourceMember = await ensureChatMembership(req.user!.userId, message.chatId);
   const targetMember = await ensureChatMembership(req.user!.userId, targetChatId);
   if (!sourceMember || !targetMember) return res.status(403).json({ message: 'Forbidden' });
-  
   const forwarded = await prisma.message.create({
     data: {
-      chatId: targetChatId,
-      senderId: req.user!.userId,
-      body: message.body,
-      forwardedFromId: message.id,
-      replyToMessageId: req.body.replyToMessageId
+      chatId: targetChatId, senderId: req.user!.userId, body: message.body, forwardedFromId: message.id, replyToMessageId: req.body.replyToMessageId,
+      attachments: { create: message.attachments.map(att => ({ uploaderId: req.user!.userId, originalName: att.originalName, mimeType: att.mimeType, sizeBytes: att.sizeBytes, storagePath: att.storagePath, url: att.url })) }
     },
-    include: {
-      sender: { select: { id: true, name: true, email: true } },
-      reads: true,
-      attachments: { include: {} },
-      forwardedFrom: { include: { sender: { select: { name: true } } } }
-    }
+    include: { sender: { select: { id: true, name: true, email: true } }, reads: true, attachments: true, forwardedFrom: { include: { sender: { select: { name: true } } } } }
   });
-  
-  const formatted = formatMessage(forwarded);
-  io.to(`chat:${targetChatId}`).emit('message:new', formatted);
-  res.json(formatted);
+  io.to(`chat:${targetChatId}`).emit('message:new', formatMessage(forwarded));
+  res.json(formatMessage(forwarded));
 });
 
 // === Голосовые сообщения ===
@@ -771,69 +581,98 @@ app.post('/messages/voice', authMiddleware, upload.single('audio'), async (req: 
   const { chatId, duration } = req.body;
   const file = req.file;
   if (!file || !chatId || !duration) return res.status(400).json({ message: 'audio, chatId and duration required' });
-  
   const member = await ensureChatMembership(req.user!.userId, chatId);
   if (!member) return res.status(403).json({ message: 'Forbidden' });
-  
   const url = `${req.protocol}://${req.get('host')}/uploads/${path.basename(file.path)}`;
-  
-  const message = await prisma.message.create({
-    data: { chatId, senderId: req.user!.userId, body: '' },
-    include: { sender: { select: { id: true, name: true, email: true } }, reads: true }
-  });
-  
-  const voiceNote = await prisma.voiceNote.create({
-    data: {
-      messageId: message.id,
-      duration: parseInt(duration),
-      url,
-      storagePath: file.path,
-      sizeBytes: file.size
-    }
-  });
-  
-  const formatted = { ...formatMessage(message), voiceNote };
-  io.to(`chat:${chatId}`).emit('message:new', formatted);
-  res.json(formatted);
+  const message = await prisma.message.create({ data: { chatId, senderId: req.user!.userId, body: '' }, include: { sender: { select: { id: true, name: true, email: true } }, reads: true } });
+  const voiceNote = await prisma.voiceNote.create({ data: { messageId: message.id, duration: parseInt(duration), url, storagePath: file.path, sizeBytes: file.size } });
+  io.to(`chat:${chatId}`).emit('message:new', { ...formatMessage(message), voiceNote });
+  res.json({ ...formatMessage(message), voiceNote });
 });
 
 // === Оффлайн очередь сообщений ===
 app.post('/offline-messages', authMiddleware, async (req: express.Request & { user?: AuthUser }, res) => {
   const { chatId, body } = req.body;
   if (!chatId || !body) return res.status(400).json({ message: 'chatId and body required' });
-  
   const member = await ensureChatMembership(req.user!.userId, chatId);
   if (!member) return res.status(403).json({ message: 'Forbidden' });
-  
-  const queued = await prisma.offlineMessageQueue.create({
-    data: { userId: req.user!.userId, chatId, body }
-  });
-  
+  // ✅ FIX: Добавлено data:
+  const queued = await prisma.offlineMessageQueue.create({ data: { userId: req.user!.userId, chatId, body } });
   res.json(queued);
 });
 
 app.get('/offline-messages', authMiddleware, async (req: express.Request & { user?: AuthUser }, res) => {
-  const messages = await prisma.offlineMessageQueue.findMany({
-    where: { userId: req.user!.userId, sent: false },
-    orderBy: { createdAt: 'asc' }
-  });
+  const messages = await prisma.offlineMessageQueue.findMany({ where: { userId: req.user!.userId, sent: false }, orderBy: { createdAt: 'asc' } });
   res.json(messages);
 });
 
 app.post('/offline-messages/:id/send', authMiddleware, async (req: express.Request & { user?: AuthUser }, res) => {
   const queued = await prisma.offlineMessageQueue.findUnique({ where: { id: req.params.id } });
   if (!queued || queued.userId !== req.user!.userId) return res.status(404).json({ message: 'Not found' });
-  
-  const message = await prisma.message.create({
-    data: { chatId: queued.chatId, senderId: req.user!.userId, body: queued.body },
-    include: { sender: { select: { id: true, name: true, email: true } }, reads: true }
-  });
-  
+  const message = await prisma.message.create({ data: { chatId: queued.chatId, senderId: req.user!.userId, body: queued.body }, include: { sender: { select: { id: true, name: true, email: true } }, reads: true } });
   await prisma.offlineMessageQueue.update({ where: { id: req.params.id }, data: { sent: true } });
-  
-  const formatted = formatMessage(message);
-  io.to(`chat:${queued.chatId}`).emit('message:new', formatted);
-  res.json(formatted);
+  io.to(`chat:${queued.chatId}`).emit('message:new', formatMessage(message));
+  res.json(formatMessage(message));
+});
+
+// === Загрузка аватара пользователя ===
+app.post('/me/avatar', authMiddleware, upload.single('avatar'), async (req: express.Request & { user?: AuthUser, file?: Express.Multer.File }, res) => {
+  if (!req.file) return res.status(400).json({ message: 'Файл обязателен' });
+  const url = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+  try {
+    const updatedUser = await prisma.user.update({ where: { id: req.user!.userId }, data: { avatarUrl: url }, select: { id: true, name: true, email: true, avatarUrl: true } });
+    io.emit('user:updated', updatedUser);
+    res.json({ success: true, user: updatedUser });
+  } catch (error) {
+    console.error('POST /me/avatar error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// === Управление группами ===
+app.get('/chats/:chatId/members', authMiddleware, async (req: express.Request & { user?: AuthUser }, res) => {
+  const chat = await prisma.chat.findUnique({ where: { id: req.params.chatId } });
+  if (!chat) return res.status(404).json({ message: 'Chat not found' });
+  if (chat.isDirect) return res.status(403).json({ message: 'Forbidden for direct chats' });
+  const members = await prisma.chatMember.findMany({ where: { chatId: req.params.chatId }, include: { user: { select: { id: true, name: true, email: true } } } });
+  res.json(members);
+});
+
+app.post('/chats/:chatId/members', authMiddleware, async (req: express.Request & { user?: AuthUser }, res) => {
+  const { userId } = req.body;
+  if (!userId) return res.status(400).json({ message: 'userId required' });
+  const member = await ensureChatMembership(req.user!.userId, req.params.chatId);
+  if (!member || member.role !== 'owner') return res.status(403).json({ message: 'Forbidden: Owner only' });
+  const chat = await prisma.chat.findUnique({ where: { id: req.params.chatId } });
+  if (!chat || chat.isDirect) return res.status(400).json({ message: 'Invalid chat' });
+  try {
+    const newMember = await prisma.chatMember.create({ data: { chatId: req.params.chatId, userId }, include: { user: { select: { id: true, name: true, email: true } } } });
+    io.to(`chat:${req.params.chatId}`).emit('chat:member:added', newMember);
+    res.json(newMember);
+  } catch (err) {
+    res.status(400).json({ message: 'User already in chat or error' });
+  }
+});
+
+app.delete('/chats/:chatId/members/:userId', authMiddleware, async (req: express.Request & { user?: AuthUser }, res) => {
+  const member = await ensureChatMembership(req.user!.userId, req.params.chatId);
+  if (!member || member.role !== 'owner') return res.status(403).json({ message: 'Forbidden: Owner only' });
+  if (req.params.userId === req.user!.userId) return res.status(400).json({ message: 'Use delete chat to leave' });
+  await prisma.chatMember.delete({ where: { userId_chatId: { userId: req.params.userId, chatId: req.params.chatId } } });
+  io.to(`chat:${req.params.chatId}`).emit('chat:member:removed', { userId: req.params.userId });
+  res.json({ ok: true });
+});
+
+app.delete('/chats/:chatId', authMiddleware, async (req: express.Request & { user?: AuthUser }, res) => {
+  const member = await ensureChatMembership(req.user!.userId, req.params.chatId);
+  if (!member) return res.status(403).json({ message: 'Forbidden' });
+  if (member.role === 'owner') {
+    await prisma.chat.update({ where: { id: req.params.chatId }, data: { deletedAt: new Date() } });
+    io.to(`chat:${req.params.chatId}`).emit('chat:deleted', { chatId: req.params.chatId });
+  } else {
+    await prisma.chatMember.delete({ where: { userId_chatId: { userId: req.user!.userId, chatId: req.params.chatId } } });
+  }
+  res.json({ ok: true });
 });
 
 // === Socket.IO Setup ===
@@ -854,10 +693,7 @@ io.use((socket, next) => {
 io.on('connection', async (socket) => {
   const user = socket.data.user as AuthUser;
   const deviceId = socket.data.deviceId as string;
-  
-  // При первом подключении увеличиваем счетчик и отправляем событие онлайн
   updatePresence(user.userId, 1);
-  
   const hb = setInterval(() => updatePresence(user.userId, 0), 15000);
   socketHeartbeatTimers.set(socket.id, hb);
   const memberships = await prisma.chatMember.findMany({ where: { userId: user.userId } });
@@ -865,12 +701,10 @@ io.on('connection', async (socket) => {
   socket.emit('presence:ready', { userId: user.userId, chatIds: memberships.map((m) => m.chatId) });
   
   socket.on('presence:heartbeat', () => updatePresence(user.userId, 0));
-  
   socket.on('chat:join', async (chatId: string) => {
     const member = await ensureChatMembership(user.userId, chatId);
     if (member) socket.join(`chat:${chatId}`);
   });
-  
   socket.on('message:send', async (payload: { chatId: string; body?: string }) => {
     const parsed = sendMessageSchema.safeParse(payload);
     if (!parsed.success) return;
@@ -878,16 +712,10 @@ io.on('connection', async (socket) => {
     if (!member || !parsed.data.body?.trim()) return;
     const message = await prisma.message.create({
       data: { chatId: parsed.data.chatId, senderId: user.userId, body: parsed.data.body },
-      include: {
-        sender: { select: { id: true, name: true, email: true } },
-        reads: { select: { userId: true, readAt: true } },
-        attachments: true,
-        replyTo: { include: { sender: { select: { name: true } } } }
-      }
+      include: { sender: { select: { id: true, name: true, email: true } }, reads: { select: { userId: true, readAt: true } }, attachments: true, replyTo: { include: { sender: { select: { name: true } } } } }
     });
     io.to(`chat:${parsed.data.chatId}`).emit('message:new', formatMessage(message));
   });
-  
   socket.on('typing:start', async ({ chatId }: { chatId: string }) => {
     const member = await ensureChatMembership(user.userId, chatId);
     if (!member) return;
@@ -899,7 +727,6 @@ io.on('connection', async (socket) => {
     }, 5000));
     socket.to(`chat:${chatId}`).emit('typing:update', { chatId, userId: user.userId, isTyping: true });
   });
-  
   socket.on('typing:stop', async ({ chatId }: { chatId: string }) => {
     const member = await ensureChatMembership(user.userId, chatId);
     if (!member) return;
@@ -907,13 +734,9 @@ io.on('connection', async (socket) => {
     if (typingTimers.has(key)) { clearTimeout(typingTimers.get(key)!); typingTimers.delete(key); }
     socket.to(`chat:${chatId}`).emit('typing:update', { chatId, userId: user.userId, isTyping: false });
   });
-  
   socket.on('message:read', async ({ messageId }: { messageId: string }) => {
-    console.log('[backend] message:read event received', { userId: user.userId, messageId });
-    const result = await markReadForMessage(user.userId, messageId);
-    console.log('[backend] markReadForMessage result', { messageId, result });
+    await markReadForMessage(user.userId, messageId);
   });
-  
   socket.on('disconnect', async () => {
     const timer = socketHeartbeatTimers.get(socket.id);
     if (timer) clearInterval(timer);

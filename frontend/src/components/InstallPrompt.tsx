@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { themeTokens } from '../styles/theme';
 
 declare global {
   interface BeforeInstallPromptEvent extends Event {
@@ -12,7 +11,6 @@ declare global {
 export function InstallPrompt() {
   const [prompt, setPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [visible, setVisible] = useState(false);
-  const p = themeTokens.light;
 
   useEffect(() => {
     const handler = (e: BeforeInstallPromptEvent) => {
@@ -35,15 +33,14 @@ export function InstallPrompt() {
   if (!visible || !prompt) return null;
 
   return (
-    <div style={{
-      position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
-      background: '#111827', color: '#f9fafb', padding: '14px 20px', borderRadius: 16,
-      boxShadow: '0 12px 32px rgba(0,0,0,0.25)', display: 'flex', gap: 12, alignItems: 'center', zIndex: 1000,
-      maxWidth: '90vw', fontFamily: 'system-ui, sans-serif'
-    }}>
-      <span style={{ fontSize: 14 }}>📲 Установить Messenger</span>
-      <button onClick={install} style={{ padding: '8px 14px', borderRadius: 8, border: 'none', background: p.accent, color: '#fff', cursor: 'pointer', fontWeight: 600 }}>Установить</button>
-      <button onClick={() => setVisible(false)} style={{ padding: '8px 10px', borderRadius: 8, border: 'none', background: 'transparent', color: '#9ca3af', cursor: 'pointer' }}>✕</button>
+    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-[#111827] text-[#f9fafb] px-5 py-3.5 rounded-2xl shadow-lg flex gap-3 items-center z-[1000] max-w-[90vw] font-sans">
+      <span className="text-sm">📲 Установить Messenger</span>
+      <button onClick={install} className="px-3.5 py-2 rounded-lg border-none bg-[var(--color-accent)] text-white cursor-pointer font-semibold text-sm">
+        Установить
+      </button>
+      <button onClick={() => setVisible(false)} className="px-2.5 py-2 rounded-lg border-none bg-transparent text-[#9ca3af] cursor-pointer">
+        ✕
+      </button>
     </div>
   );
 }

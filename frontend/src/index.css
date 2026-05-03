@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+@theme {
+  /* Светлая тема (по умолчанию) */
+  --color-bg: #f0f2f5;
+  --color-sidebar: #ffffff;
+  --color-sidebar-alt: #f6f8fb;
+  --color-border: #d9e1ea;
+  --color-text: #0f172a;
+  --color-text-muted: #6b7280;
+  --color-accent: #3390ec;
+  --color-accent-soft: #e7f1fd;
+  --color-surface: #ffffff;
+  --color-chat-bg: #dbe6ef;
+  --color-incoming: #ffffff;
+  --color-outgoing: #dff5c8;
+  --color-panel: rgba(255, 255, 255, 0.96);
+  --shadow-custom: 0 20px 40px rgba(15, 23, 42, 0.12);
+}
+
+/* Тёмная тема */
+.dark {
+  --color-bg: #08111b;
+  --color-sidebar: #101926;
+  --color-sidebar-alt: #162233;
+  --color-border: #243246;
+  --color-text: #e5edf7;
+  --color-text-muted: #94a3b8;
+  --color-accent: #60a5fa;
+  --color-accent-soft: #172a40;
+  --color-surface: #101926;
+  --color-chat-bg: #0b1420;
+  --color-incoming: #132132;
+  --color-outgoing: #153221;
+  --color-panel: rgba(16, 25, 38, 0.98);
+  --shadow-custom: 0 24px 48px rgba(0, 0, 0, 0.35);
+}
+
+/* Глобальные стили */
+body {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  margin: 0;
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+}
+
+/* Кастомный скроллбар */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-muted);
+}
+
+/* Паттерн для чата (заменяем inline background-image) */
+.chat-pattern {
+  background-image: radial-gradient(var(--color-border) 1px, transparent 1px);
+  background-size: 24px 24px;
+}

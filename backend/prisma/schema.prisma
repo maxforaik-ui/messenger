@@ -16,6 +16,7 @@ model User {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   deletedAt    DateTime? // Soft delete: вместо удаления аккаунта помечаем как удалённый
+  avatarUrl    String?
 
   // Связи с onDelete: Cascade/SetNull для безопасного удаления аккаунта
   chats             ChatMember[]       @relation("UserChats")
@@ -73,6 +74,8 @@ model Message {
   attachments Attachment[]
   pin         PinnedMessage?
   voiceNote   VoiceNote?
+  forwardedFrom    Message?       @relation("ForwardedMessages", fields: [forwardedFromId], references: [id], onDelete: SetNull)
+  forwardedTo      Message[]      @relation("ForwardedMessages")
 
   @@index([chatId, createdAt])
 }

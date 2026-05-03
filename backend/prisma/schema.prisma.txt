@@ -24,12 +24,14 @@ model User {
   uploadedFiles     Attachment[]
   pinnedMessages    PinnedMessage[]
   pushSubscriptions PushSubscription[]
+  offlineMessages   OfflineMessageQueue[]
 }
 
 model Chat {
   id        String    @id @default(cuid())
   isDirect  Boolean   @default(false)
   title     String?
+  archived  Boolean   @default(false)
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime? // Soft delete: вместо удаления чата помечаем как удалённый
@@ -59,8 +61,9 @@ model Message {
   body             String?   @db.Text
   createdAt        DateTime  @default(now())
   deletedAt        DateTime?
-  reactions        Json?     @default("{}")
+  reactions        Json      @default("{}")
   replyToMessageId String?
+  forwardedFromId  String?
 
   chat        Chat           @relation(fields: [chatId], references: [id], onDelete: Cascade)
   sender      User           @relation("UserSentMessages", fields: [senderId], references: [id], onDelete: Cascade)
@@ -69,6 +72,7 @@ model Message {
   reads       MessageRead[]
   attachments Attachment[]
   pin         PinnedMessage?
+  voiceNote   VoiceNote?
 
   @@index([chatId, createdAt])
 }
@@ -124,4 +128,29 @@ model PushSubscription {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+model VoiceNote {
+  id        String   @id @default(cuid())
+  messageId String   @unique
+  duration  Int      // длительность в секундах
+  url       String
+  storagePath String
+  sizeBytes Int
+  createdAt DateTime @default(now())
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+}
+
+model OfflineMessageQueue {
+  id        String   @id @default(cuid())
+  userId    String
+  chatId    String
+  body      String?  @db.Text
+  createdAt DateTime @default(now())
+  sent      Boolean  @default(false)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, sent])
 }
